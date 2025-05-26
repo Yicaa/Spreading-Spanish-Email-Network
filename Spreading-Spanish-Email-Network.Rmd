@@ -26,6 +26,7 @@ rm(list = ls())
 library(tidyverse)
 library(igraph)
 library(tidygraph)
+library(ggplot2)
 library(ggraph)
 library(ggthemes)
 library(here)
@@ -47,9 +48,47 @@ Virgili University in Spain, in 2003.
 
 Source: [Netzschleuder](https://networks.skewed.de/net/uni_email).
 
-#### Properties
+### Interpreting the email dataset as a SIR model
 
-Directed, unweighted, social communication network.
+To help interpret the findings within the context of the university
+email network, we explain the following settings can specify the
+following settings. In the setting of a university email network We can
+consider the epidemic as the spread of rumors between individuals. For
+example, it could be some sort of negative campaign about a Professor to
+ruin their reputation (but never a Social Networks teacher obviously -
+don't worry Blas, you're safe :D).
+
+We could the actors in the model:
+
+-   Susceptible (S): Individuals who have not yet received the email
+
+-   Infected (I): Individuals who have already recieved the bad email
+    and joined the campaign. They can now send the rumors on to other
+    individuals in the university
+
+-   Recovered (R): Individuals who have already received the bad email
+    and were infected, but now realize that it's just a rumor and are
+    now not at risk of believing the email if they see it again AND will
+    not send it to others if they see it. They are immune to the rumor.
+
+We could consider the email as a SI model if it's
+
+### Understanding this model stype:
+
+In terms of model outcome, we could consider the outcomes as:
+
+Susceptible-Infected (SI): Everyone who received the virus is infected
+and loses control of their computer and the virus can be sent on to all
+of their connections. (This is the least difficult to justify in this
+setting)
+
+Susceptible-Infected-Recovered (SIR): Everyone who received the email
+virus has installed proper seucity software and is not as risk of
+receiving anymore malware.
+
+Susceptible-Infected-Susceptible (SIS): People have IT make a temporary
+fix to remove the email virus, but it is not a long term solution. The
+computer does not have immunity.
 
 #### Nodes and links
 
@@ -185,11 +224,28 @@ where:
     node’s degree** — it captures how much variability (or inequality)
     there is in node connectivity.
 
-Therefore, we will apply this formula to calculate the βc:\
+Therefore, we will apply this formula to calculate the βc:
+
+\
+\*\*\* Q FOR YIJIA - WHERE DOES IT SAY UNDIRECTED NETWORKS ONLY?
+
+-   I think it makes sense but can't find anywhere to say it. I also get
+    a different output for the threshold if I use there 2 options.. we
+    should confirm which we use and why.
+
+    -   graph2 \<- graph_from_data_frame(links, directed = FALSE,
+        vertices = nodes)
+
+    -   graph \<- as_undirected(graph, mode = "collapse")
+
+I tested all the methods of making undirected and collapse is the most
+extreme (it does make sense though). But with collapse, it drops the
+number of edges from 10,903 to 5,451.
+
+If we treat it as undirected, we should understand and things like
+average degree have changed.
 
 ```{r}
-#Calculate epidemic threshold using degree moments
-
 # Set recovery rate (mu) — commonly set to 0.1
 mu <- 0.1
 
@@ -203,8 +259,24 @@ k <- degree(graph_undirected)
 mean_k <- mean(k)
 mean_k2 <- mean(k^2)
 
+# testing other graph direction values
+graph2 <- graph_from_data_frame(links, directed = FALSE, vertices = nodes)
+graph3 <- graph <- as_undirected(graph, mode = "each")
+graph4 <- graph <- as_undirected(graph, mode = "mutual")
+
+# check edge counts
+igraph::ecount(graph2)
+igraph::ecount(graph_undirected)
+
 # Apply the formula: βc = μ * <k> / <k^2>
-beta_c <- mu * mean_k / mean_k2
+mu * mean(degree(graph_undirected)) / (mean(degree(graph_undirected)^2))
+mu * mean(degree(graph)) / (mean(degree(graph)^2))
+mu * mean(degree(graph2)) / (mean(degree(graph2)^2))
+mu * mean(degree(graph3)) / (mean(degree(graph3)^2))
+mu * mean(degree(graph4)) / (mean(degree(graph4)^2))
+
+# the threshold
+beta_c <- mu * mean(degree(graph_undirected)) / (mean(degree(graph_undirected)^2))
 
 # Output the result
 paste0("Theoretical epidemic threshold βc is approximately: ", round(beta_c, 5),
@@ -227,30 +299,51 @@ in the network. This is typical in real-world social networks, where
 most people have few contacts, and a few individuals are highly
 connected.
 
-<br>
-<br>
+<br> <br>
 
 ### 2) Assuming that randomly-selected 1% initial spreaders, simulate the SIR model below and above that threshold and plot the number of infected people as a function of β.
 
-```{r}
-# SIR simulation with different β values
+Here we simulate the SIR model with different β values. In the model,
+the values represent:
 
+-   0 = S, 1 = I, 2 = R
+
+The broad process is:
+
+1.   Set the inputs - graph, threshold, recovery rate & seeds.
+
+2.  Initialise all nodes as 0 in period 0, except infected which are the
+    randomly assigned seeds.
+
+3.  Create output table with time and infection period
+
+4.  Loop through while there are still infected people. Adding new
+    infections to the table in the period they became infected.
+
+All nodes start as value 0 as they're uninfected. We then apply
+infection to the randomly selected seeds and
+
+```{r}
 # Set recovery rate μ
 mu <- 0.1
 
 # SIR simulation function
+
 sim_sir <- function(g, beta, mu, seeds){
-  state <- rep(0, vcount(g))     # 0 = S, 1 = I, 2 = R
+  
+  state <- rep(0, vcount(g))     
   state[seeds] <- 1              # set initial spreaders
   t <- 0
+  
   table <- data.frame(t=0, inf=seeds)
-  while(sum(state == 1) > 0){    # while there is still infected people
+  while(sum(state == 1) > 0){    
     t <- t + 1
     new_inf <- c()
     for(i in which(state == 1)){ # among all infected ones
       neighbors <- neighbors(g, i)
       for(j in neighbors){
-        if(state[j] == 0 && runif(1) < beta){  # If neighbor j is susceptible (i.e., state[j] == 0), then infect it with probability β. "runif(1) < beta" means to generate a random number between 0 and 1. If it’s less than β, the infection is considered successful.
+        if(state[j] == 0 && runif(1) < beta){  
+          # If neighbor j is susceptible (i.e., state[j] == 0), then infect it with probability β. "runif(1) < beta" means to generate a random number between 0 and 1. If it’s less than β, the infection is considered successful.
           new_inf <- c(new_inf, j)
         }
       }
@@ -266,19 +359,28 @@ sim_sir <- function(g, beta, mu, seeds){
   table
 }
 
+```
 
+Now we run the simulations over different values. Since our critical
+threshold was 0.00535, we select 2 values smaller than the threshold and
+2 above.
+
+```{r}
 # use undirected graph
 graph_undirected <- as_undirected(graph, mode = "collapse")
 
-# set a list for different β （lower than, close to, or higher than βc）
-beta_vals <- c(0.002, 0.005, 0.01, 0.02)
+# set the thresholds, β, to test （lower than, close to, or higher than βc）
+beta_vals <- c(0, 0.002, 0.005, beta_c, 0.01, 0.02, 0.1)
 
-# randomly set 1% as seeds
+# keep recovery rate (mu) at 0.1
+mu <- 0.1
+
+# randomly set 1% as seeds - this is 12 nodes (of our 1133 total)
 set.seed(123)
 num_seeds <- ceiling(0.01 * vcount(graph_undirected))
 seeds <- sample(1:vcount(graph_undirected), num_seeds)
 
-# run n times of simulation for each β ，calculate the number of finally infected people
+# run n times of simulation for each β. Calculate infection total for each. 
 n_runs <- 10
 results <- data.frame()
 
@@ -290,20 +392,26 @@ for(beta in beta_vals){
   }
   avg_inf <- mean(final_counts)
   sd_inf <- sd(final_counts)
-  results <- rbind(results, data.frame(beta=beta, avg_infected=avg_inf, sd=sd_inf))
+  results <- rbind(results, data.frame(beta=beta, avg_infected=avg_inf, sd=round(sd_inf,2)))
 }
+# and view the results:
+results
+```
 
+Now we can plot the results to compare more easily:
+
+```{r}
 # viz：β vs averaged number of infected people
-library(ggplot2)
 ggplot(results, aes(x=beta, y=avg_infected)) +
   geom_line(color="steelblue") +
   geom_point(size=3) +
-  geom_errorbar(aes(ymin=avg_infected - sd, ymax=avg_infected + sd), width=0.001, alpha=0.6) +
+  geom_errorbar(aes(ymin=avg_infected - sd, 
+                    ymax=avg_infected + sd), 
+                width=0.001, alpha=0.6) +
   labs(title = "Infection Size vs β (Random 1% Seeds)",
        x = expression(beta),
        y = "Average number of infected nodes") +
   theme_minimal()
-
 ```
 
 The plot shows a **sharp transition** in infection size between β =
@@ -319,8 +427,37 @@ suggests that **spread outcomes are more variable** when the infection
 rate is high, likely due to the influence of network structure and
 randomness in seed placement.
 
-<br>
-<br>
+TO DO: we need to plot the growth over time as well. This is then
+compared to in part 3.
+
+```{r}
+# plot the outputs over time
+results <- map_dfr(seq(0,0.2,0.01), # beta range
+        \(beta){ seeds <- sample(1:vcount(graph2),vcount(graph2)*0.01)
+        realization <- sim_sir(graph2,beta,mu,seeds) # make a realization for each beta
+        data.frame(beta,ninf=nrow(realization)) # create dataframe row
+        })
+results %>% ggplot(aes(x=beta,y=ninf))+ geom_point()+
+  geom_vline(xintercept = beta_c,linetype=2)
+```
+
+Then we can make a more detailed view because the rise is so sharp, to
+try view the change very close to our critical threshold and how it
+changes. We plot the 10 values either side of our critical threshold.
+Noting these are very minuscule values so noise exists between values.
+
+```{r}
+# plot detailed outputs very close to threshold
+results <- map_dfr(seq(0,beta_c*2,beta_c/5), # beta range
+        \(beta){ seeds <- sample(1:vcount(graph2),vcount(graph2)*0.01)
+        realization <- sim_sir(graph2,beta,mu,seeds) # make a realization for each beta
+        data.frame(beta,ninf=nrow(realization)) # create dataframe row
+        })
+results %>% ggplot(aes(x=beta,y=ninf))+ geom_point()+
+  geom_vline(xintercept = beta_c,linetype=2)
+```
+
+<br> <br>
 
 ### 3) Choose a β well-above above βc. Using centrality , communities or any other suitable metric, find a better set of 1% of seeds in the network so we get more infected people than the random case. Measure the difference of your choice with the random case as:
 
