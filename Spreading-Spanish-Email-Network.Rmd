@@ -427,35 +427,35 @@ suggests that **spread outcomes are more variable** when the infection
 rate is high, likely due to the influence of network structure and
 randomness in seed placement.
 
-TO DO: we need to plot the growth over time as well. This is then
-compared to in part 3.
+Now we plot the general trend to try identify smoothness (note that this
+plot only has 1 run per point so could be considered less robust than
+the previous).
 
 ```{r}
+# set the seeds for consistency in the starting infection nodes:
+set.seed(123)
+num_seeds <- ceiling(0.01 * vcount(graph_undirected))
+seeds <- sample(1:vcount(graph_undirected), num_seeds)
+
 # plot the outputs over time
-results <- map_dfr(seq(0,0.2,0.01), # beta range
-        \(beta){ seeds <- sample(1:vcount(graph2),vcount(graph2)*0.01)
-        realization <- sim_sir(graph2,beta,mu,seeds) # make a realization for each beta
+results <- map_dfr(seq(0,0.1,0.005), # beta range
+        \(beta){
+          realization <- sim_sir(graph_undirected,beta,mu,seeds) # make a realization for each beta
         data.frame(beta,ninf=nrow(realization)) # create dataframe row
         })
+
 results %>% ggplot(aes(x=beta,y=ninf))+ geom_point()+
+  geom_line(color="red", alpha=0.5)+
   geom_vline(xintercept = beta_c,linetype=2)
 ```
 
-Then we can make a more detailed view because the rise is so sharp, to
-try view the change very close to our critical threshold and how it
-changes. We plot the 10 values either side of our critical threshold.
-Noting these are very minuscule values so noise exists between values.
+We see the trend holds. There is a very sharp increase around the
+critical threshold. Note that this value is very low and the increments
+between each value in the plot are also small - each representing a 0.5%
+increase in the beta threshold ($\beta = 0.005$).
 
-```{r}
-# plot detailed outputs very close to threshold
-results <- map_dfr(seq(0,beta_c*2,beta_c/5), # beta range
-        \(beta){ seeds <- sample(1:vcount(graph2),vcount(graph2)*0.01)
-        realization <- sim_sir(graph2,beta,mu,seeds) # make a realization for each beta
-        data.frame(beta,ninf=nrow(realization)) # create dataframe row
-        })
-results %>% ggplot(aes(x=beta,y=ninf))+ geom_point()+
-  geom_vline(xintercept = beta_c,linetype=2)
-```
+With such a low critical threshold, we are very likely to end up with an
+epidemic in this model.
 
 <br> <br>
 
@@ -464,6 +464,10 @@ results %>% ggplot(aes(x=beta,y=ninf))+ geom_point()+
 #### a) The difference in the total number of infected people
 
 #### b) The difference in the time of the peak of infection (when most infections happen).
+
+First, we identify our best 1% of seeds to find the 1% of seeds that
+will most rapidly spread the rumors. In the email settings this would be
+represented by a centrality metric. We will use the
 
 ### 4) Using the same β, design a “quarantine strategy”: at time step t=3 or 4, quarantine of 20% the susceptible population. You can model quarantine by temporally removing these nodes. Release the quarantined nodes 8 time steps later, making them susceptible again. Measure the difference with respect to no quarantine.
 
