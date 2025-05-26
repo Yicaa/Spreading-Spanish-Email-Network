@@ -1,0 +1,175 @@
+---
+title: "Spreading: Spanish University Email Network"
+author: "Yijia Lin and Bradley McKenzie"
+date: "`r Sys.Date()`"
+output: 
+  rmdformats::html_clean:
+    lightbox: false
+    thumbnails: false
+    toc: yes
+    toc_float: true
+    toc_depth: 3
+---
+
+```{r,include=F}
+knitr::opts_chunk$set(cache=T,message=FALSE,warning=FALSE)
+options(scipen=700)
+```
+
+
+## Libraries
+
+```{r, message=FALSE, warning=FALSE}
+rm(list = ls())
+library(tidyverse)
+library(igraph)
+library(tidygraph)
+library(ggraph)
+library(ggthemes)
+library(here)
+library(caret)
+```
+
+## Read the data
+
+```{r, message=FALSE, warning=FALSE}
+nodes <- read_csv(here("network_data", "nodes.csv"))
+links <- read_csv(here("network_data", "edges.csv"))
+```
+
+## Description of the dataset
+
+This network is a directed and unweighted social communication network, which represents the exchange of emails among members of the Rovira i Virgili University in Spain, in 2003.
+
+Source: [Netzschleuder](https://networks.skewed.de/net/uni_email).
+
+#### Properties
+
+Directed, unweighted, social communication network.
+
+#### Nodes and links
+
+```{r}
+head(nodes)
+head(links)
+```
+
+Within the `nodes` dataframe, the column `# index` is the one indicating the index of the nodes, the column `name` would contain the corresponding name of each node, but they have been anonymized for privacy reason so this column is still a series of numbers. The `_pos` column represents the coordinates of each node in a 2D space, used for visualization or layout in graph-related tasks. 
+
+In the `links` dataframe, the column `# source` and `target` indicate the indexes of the 2 nodes forming a link.
+
+#### Graph
+
+```{r}
+graph <- graph_from_data_frame(links, directed = TRUE, vertices = nodes)
+graph
+```
+
+## Initial graph exploration
+
+To understand the graph, we can plot the degree distribution to check whether we have the expected power-law distribution or another type. This will help to interpret the findings later when we remove links.
+
+First, we check for any loops, these would be emails sent to self. And if so, we can simplify the graph to remove these (and also any eventual multiple edge). 
+
+```{r}
+paste0("The number of recursive (self-directed) emails in the network is: ", 
+       ecount(graph) - ecount(simplify(graph)))
+
+# we see that one exists, so we simplify the graph to remove it. 
+graph <- simplify(graph)
+
+# check our graph is setup properly
+is_igraph(graph)
+```
+
+Next, calculate basic descriptive statistics of the plot:
+
+```{r}
+paste0("There are ", vcount(graph), " nodes and ", ecount(graph), " edges in our Spanish email network")
+
+# check if our graph is fully connected
+is_connected(graph)
+
+#degree
+degree_all <- degree(graph, mode="all")
+degree_out <- degree(graph, mode="out")
+paste0("The average degree is: ", round(mean(degree(graph)), 2), " when we DO NOT consider the direction of the emails.")
+paste0("The average degree is: ", round(sum(degree_out)/vcount(graph), 2), " when we DO consider the emails to be directed outward from the node (sender) to a recipient")
+
+# most connected node:
+paste0("The most connected node is number ", which.max(degree(graph))[1], " which has ", max(degree(graph)), " links.")
+```
+
+For the purposes of this homework, we are not factoring in this directional property of the graph. We are considering that the emails are indicating a social relationship between the two nodes (sender and receiver) and it is irrelevant who sent the email. This means the average interactions for each individual node is 19.24 (which would represent email interactions with 19.24 different people on average).
+
+Now check the degree distribution;
+
+```{r, fig.width=8}
+# set average node for label 
+avg_deg <- round(mean(degree(graph)),2)
+
+# plot linear distribution
+ggplot() + 
+  geom_histogram(aes(x = degree_all), bins=40) + 
+  geom_vline(aes(xintercept = avg_deg, colour = "red"), show.legend = FALSE) +
+  annotate("text", x = avg_deg+5, y = 160, label = paste0("Avg deg = ", avg_deg), angle = 90, color = "red") + 
+  labs(title = "Degree distribution histogram for Uni emails",
+       x = "Degrees",
+       y = "Number of nodes") +
+  theme(axis.title.y = element_text(angle = 90))
+```
+
+We see the common power law distribution. There are few very connected nodes and many less connected nodes. We see that the max node must be node number 105 we reported earlier, with its 142 links. This is far more than the second most connected.
+
+Visualization of the network:
+
+```{r, fig.width=8}
+# set colour and size only for the top 50 nodes
+top_50_nodes <- order(degree_all, decreasing = TRUE)[1:50]
+V(graph)$color <- "grey3"
+V(graph)[top_50_nodes]$color <- "red"
+V(graph)$size <- 0.75
+V(graph)[top_50_nodes]$size <- 2
+
+# plot the full network
+ggraph(graph, layout = "kk") +
+  geom_edge_link(width = 0.1, alpha = 0.5, color = "grey") +  
+  geom_node_point(color = V(graph)$color, size = V(graph)$size) +  
+  theme_void() +  
+  ggtitle("Visualisation of the network, 50 most connected nodes highlighted")+
+  theme(legend.position = "none")
+```
+
+We see that the most connected nodes are all centered in the graph. On the outside, we can see the nodes with only a couple of connections.
+
+
+## Steps
+
+### 1) Find the theoretical epidemic threshold for your network for the information βc to reach a significant number of nodes.
+
+
+### 2) Assuming that randomly-selected 1% initial spreaders, simulate the SIR model below and above that threshold and plot the number of infected people as a function of β.
+
+
+### 3) Choose a β well-above above βc. Using centrality , communities or any other suitable metric, find a better set of 1% of seeds in the network so we get more infected people than the random case. Measure the difference of your choice with the random case as:
+
+####  a) The difference in the total number of infected people
+
+####  b) The difference in the time of the peak of infection (when most infections happen).
+
+
+### 4) Using the same β, design a “quarantine strategy”: at time step t=3 or 4, quarantine of 20% the susceptible population. You can model quarantine by temporally removing these nodes. Release the quarantined nodes 8 time steps later, making them susceptible again. Measure the difference with respect to no quarantine.
+
+
+
+### 5) Suppose now that you can convince 5% of people in the network not to spread that information at all.
+
+#### a) Choose those 5% randomly in the network. Simulate the SIR model above βc using 1% of the remaining nodes as seeds. Choose those seeds randomly.
+
+#### b) Choose those 5% according to their centrality. Simulate the SIR model βc above using 1% of the remaining nodes as seeds. Choose those seeds randomly.
+
+#### c) Measure the difference between both cases as you did in step 3.
+
+### 6) Comment on the relationship between the findings in steps 3 and 5 using the same type of centrality for the 1% in step 3 and 5% in step 5.
+
+### 7) With the results of step 2, train a model that predicts that time to infection of a node using their degree, centrality, betweeness, page rank and any other predictors you see fit. Use that model to select the seed nodes as those with the smallest time to infection in step 3. Repeat step 5 with this knowledge.
