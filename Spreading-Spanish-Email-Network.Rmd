@@ -9,13 +9,15 @@ output:
     toc: yes
     toc_float: true
     toc_depth: 3
+editor_options: 
+  markdown: 
+    wrap: 72
 ---
 
 ```{r,include=F}
 knitr::opts_chunk$set(cache=T,message=FALSE,warning=FALSE)
 options(scipen=700)
 ```
-
 
 ## Libraries
 
@@ -39,7 +41,9 @@ links <- read_csv(here("network_data", "edges.csv"))
 
 ## Description of the dataset
 
-This network is a directed and unweighted social communication network, which represents the exchange of emails among members of the Rovira i Virgili University in Spain, in 2003.
+This network is a directed and unweighted social communication network,
+which represents the exchange of emails among members of the Rovira i
+Virgili University in Spain, in 2003.
 
 Source: [Netzschleuder](https://networks.skewed.de/net/uni_email).
 
@@ -54,9 +58,15 @@ head(nodes)
 head(links)
 ```
 
-Within the `nodes` dataframe, the column `# index` is the one indicating the index of the nodes, the column `name` would contain the corresponding name of each node, but they have been anonymized for privacy reason so this column is still a series of numbers. The `_pos` column represents the coordinates of each node in a 2D space, used for visualization or layout in graph-related tasks. 
+Within the `nodes` dataframe, the column `# index` is the one indicating
+the index of the nodes, the column `name` would contain the
+corresponding name of each node, but they have been anonymized for
+privacy reason so this column is still a series of numbers. The `_pos`
+column represents the coordinates of each node in a 2D space, used for
+visualization or layout in graph-related tasks.
 
-In the `links` dataframe, the column `# source` and `target` indicate the indexes of the 2 nodes forming a link.
+In the `links` dataframe, the column `# source` and `target` indicate
+the indexes of the 2 nodes forming a link.
 
 #### Graph
 
@@ -67,9 +77,13 @@ graph
 
 ## Initial graph exploration
 
-To understand the graph, we can plot the degree distribution to check whether we have the expected power-law distribution or another type. This will help to interpret the findings later when we remove links.
+To understand the graph, we can plot the degree distribution to check
+whether we have the expected power-law distribution or another type.
+This will help to interpret the findings later when we remove links.
 
-First, we check for any loops, these would be emails sent to self. And if so, we can simplify the graph to remove these (and also any eventual multiple edge). 
+First, we check for any loops, these would be emails sent to self. And
+if so, we can simplify the graph to remove these (and also any eventual
+multiple edge).
 
 ```{r}
 paste0("The number of recursive (self-directed) emails in the network is: ", 
@@ -100,7 +114,12 @@ paste0("The average degree is: ", round(sum(degree_out)/vcount(graph), 2), " whe
 paste0("The most connected node is number ", which.max(degree(graph))[1], " which has ", max(degree(graph)), " links.")
 ```
 
-For the purposes of this homework, we are not factoring in this directional property of the graph. We are considering that the emails are indicating a social relationship between the two nodes (sender and receiver) and it is irrelevant who sent the email. This means the average interactions for each individual node is 19.24 (which would represent email interactions with 19.24 different people on average).
+For the purposes of this homework, we are not factoring in this
+directional property of the graph. We are considering that the emails
+are indicating a social relationship between the two nodes (sender and
+receiver) and it is irrelevant who sent the email. This means the
+average interactions for each individual node is 19.24 (which would
+represent email interactions with 19.24 different people on average).
 
 Now check the degree distribution;
 
@@ -119,7 +138,10 @@ ggplot() +
   theme(axis.title.y = element_text(angle = 90))
 ```
 
-We see the common power law distribution. There are few very connected nodes and many less connected nodes. We see that the max node must be node number 105 we reported earlier, with its 142 links. This is far more than the second most connected.
+We see the common power law distribution. There are few very connected
+nodes and many less connected nodes. We see that the max node must be
+node number 105 we reported earlier, with its 142 links. This is far
+more than the second most connected.
 
 Visualization of the network:
 
@@ -140,27 +162,173 @@ ggraph(graph, layout = "kk") +
   theme(legend.position = "none")
 ```
 
-We see that the most connected nodes are all centered in the graph. On the outside, we can see the nodes with only a couple of connections.
-
+We see that the most connected nodes are all centered in the graph. On
+the outside, we can see the nodes with only a couple of connections.
 
 ## Steps
 
 ### 1) Find the theoretical epidemic threshold for your network for the information βc to reach a significant number of nodes.
 
+The formula to calculate the theoretical epidemic threshold that we
+learned from class is:
+
+$$ \beta_c = \mu \frac{\langle k \rangle}{\langle k^2 \rangle}$$
+
+where:
+
+-   **μ (mu)**: Recovery rate — typically set to **0.1** in SIR models.
+
+-   **⟨k⟩ (mean degree)**: The **average number of connections** (edges)
+    per node in the network.
+
+-   **⟨k²⟩ (mean squared degree)**: The **average of the square of each
+    node’s degree** — it captures how much variability (or inequality)
+    there is in node connectivity.
+
+Therefore, we will apply this formula to calculate the βc:\
+
+```{r}
+#Calculate epidemic threshold using degree moments
+
+# Set recovery rate (mu) — commonly set to 0.1
+mu <- 0.1
+
+# Use the undirected version of the graph, as instructed
+graph_undirected <- as_undirected(graph, mode = "collapse")
+
+# Calculate degree of each node
+k <- degree(graph_undirected)
+
+# Mean degree and mean squared degree
+mean_k <- mean(k)
+mean_k2 <- mean(k^2)
+
+# Apply the formula: βc = μ * <k> / <k^2>
+beta_c <- mu * mean_k / mean_k2
+
+# Output the result
+paste0("Theoretical epidemic threshold βc is approximately: ", round(beta_c, 5),
+       " because ⟨k²⟩ = ", round(mean_k2, 4), " > ⟨k⟩ = ", round(mean_k, 4))
+
+```
+
+The estimated threshold βc ≈ 0.00535 is **very low**, indicating that
+even a small infection rate β would allow the information to reach a
+significant portion of the network.
+
+This low threshold is a direct consequence of the high variance in
+degree:\
+
+⟨k⟩ = 9.62 but ⟨k²⟩ = 179.82, which suggests the presence of a few nodes
+with **very high degree** (i.e., “super spreaders”).
+
+The large gap between ⟨k⟩ and ⟨k²⟩ is a signature of **heterogeneity**
+in the network. This is typical in real-world social networks, where
+most people have few contacts, and a few individuals are highly
+connected.
+
+<br>
+<br>
 
 ### 2) Assuming that randomly-selected 1% initial spreaders, simulate the SIR model below and above that threshold and plot the number of infected people as a function of β.
 
+```{r}
+# SIR simulation with different β values
+
+# Set recovery rate μ
+mu <- 0.1
+
+# SIR simulation function
+sim_sir <- function(g, beta, mu, seeds){
+  state <- rep(0, vcount(g))     # 0 = S, 1 = I, 2 = R
+  state[seeds] <- 1              # set initial spreaders
+  t <- 0
+  table <- data.frame(t=0, inf=seeds)
+  while(sum(state == 1) > 0){    # while there is still infected people
+    t <- t + 1
+    new_inf <- c()
+    for(i in which(state == 1)){ # among all infected ones
+      neighbors <- neighbors(g, i)
+      for(j in neighbors){
+        if(state[j] == 0 && runif(1) < beta){  # If neighbor j is susceptible (i.e., state[j] == 0), then infect it with probability β. "runif(1) < beta" means to generate a random number between 0 and 1. If it’s less than β, the infection is considered successful.
+          new_inf <- c(new_inf, j)
+        }
+      }
+      if(runif(1) < mu){  # Recover an infected node with probability μ
+        state[i] <- 2
+      }
+    }
+    state[new_inf] <- 1
+    if(length(new_inf) > 0){  # only record when there is new infection
+      table <- rbind(table, data.frame(t=t, inf=new_inf))
+    }
+  }
+  table
+}
+
+
+# use undirected graph
+graph_undirected <- as_undirected(graph, mode = "collapse")
+
+# set a list for different β （lower than, close to, or higher than βc）
+beta_vals <- c(0.002, 0.005, 0.01, 0.02)
+
+# randomly set 1% as seeds
+set.seed(123)
+num_seeds <- ceiling(0.01 * vcount(graph_undirected))
+seeds <- sample(1:vcount(graph_undirected), num_seeds)
+
+# run n times of simulation for each β ，calculate the number of finally infected people
+n_runs <- 10
+results <- data.frame()
+
+for(beta in beta_vals){
+  final_counts <- c()
+  for(i in 1:n_runs){
+    sim <- sim_sir(graph_undirected, beta, mu, seeds)
+    final_counts <- c(final_counts, length(unique(sim$inf)))
+  }
+  avg_inf <- mean(final_counts)
+  sd_inf <- sd(final_counts)
+  results <- rbind(results, data.frame(beta=beta, avg_infected=avg_inf, sd=sd_inf))
+}
+
+# viz：β vs averaged number of infected people
+library(ggplot2)
+ggplot(results, aes(x=beta, y=avg_infected)) +
+  geom_line(color="steelblue") +
+  geom_point(size=3) +
+  geom_errorbar(aes(ymin=avg_infected - sd, ymax=avg_infected + sd), width=0.001, alpha=0.6) +
+  labs(title = "Infection Size vs β (Random 1% Seeds)",
+       x = expression(beta),
+       y = "Average number of infected nodes") +
+  theme_minimal()
+
+```
+
+The plot shows a **sharp transition** in infection size between β =
+0.005 and β = 0.01, confirming the presence of an epidemic threshold.
+This matches our theoretical value of βc ≈ 0.00535. Below that,
+spreading is limited; above it, diffusion explodes.
+
+The average number of infected nodes increases steadily with β, which is
+consistent with the expectations from the SIR model.
+
+At β = 0.01 and β = 0.02, the standard deviation becomes wider. This
+suggests that **spread outcomes are more variable** when the infection
+rate is high, likely due to the influence of network structure and
+randomness in seed placement.
+
+<br>
+<br>
 
 ### 3) Choose a β well-above above βc. Using centrality , communities or any other suitable metric, find a better set of 1% of seeds in the network so we get more infected people than the random case. Measure the difference of your choice with the random case as:
 
-####  a) The difference in the total number of infected people
+#### a) The difference in the total number of infected people
 
-####  b) The difference in the time of the peak of infection (when most infections happen).
-
+#### b) The difference in the time of the peak of infection (when most infections happen).
 
 ### 4) Using the same β, design a “quarantine strategy”: at time step t=3 or 4, quarantine of 20% the susceptible population. You can model quarantine by temporally removing these nodes. Release the quarantined nodes 8 time steps later, making them susceptible again. Measure the difference with respect to no quarantine.
-
-
 
 ### 5) Suppose now that you can convince 5% of people in the network not to spread that information at all.
 
