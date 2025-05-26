@@ -224,59 +224,45 @@ where:
     node’s degree** — it captures how much variability (or inequality)
     there is in node connectivity.
 
-Therefore, we will apply this formula to calculate the βc:
+#### Updating our network to be undirected
 
-\
-\*\*\* Q FOR YIJIA - WHERE DOES IT SAY UNDIRECTED NETWORKS ONLY?
+Firstly, we make our network undirected. We use this to create a more
+true social network where spreading is symmetric between nodes and can
+happen either way.
 
--   I think it makes sense but can't find anywhere to say it. I also get
-    a different output for the threshold if I use there 2 options.. we
-    should confirm which we use and why.
+We use the undirected_graph function from igraph with mode="collapse" to
+update the graph. The effect of this is:
 
-    -   graph2 \<- graph_from_data_frame(links, directed = FALSE,
-        vertices = nodes)
+-   It merges reciprocal edges (A→B and B→A) into one link, which
+    matches the idea of a “social tie”.
 
-    -   graph \<- as_undirected(graph, mode = "collapse")
-
-I tested all the methods of making undirected and collapse is the most
-extreme (it does make sense though). But with collapse, it drops the
-number of edges from 10,903 to 5,451.
-
-If we treat it as undirected, we should understand and things like
-average degree have changed.
+That’s why with collapse, the number of edges drops by half. this better
+reflects the true number of relationships.
 
 ```{r}
-# Set recovery rate (mu) — commonly set to 0.1
+# Create the undirected version of the graph
+graph <- as_undirected(graph, mode = "collapse")
+
+paste0("There are ", vcount(graph), " nodes and ", ecount(graph), " edges in our undirected Spanish email network.")
+
+
+```
+
+Now we p
+
+```{r}
+# Set recovery rate (mu) — use the standard 0.1 value
 mu <- 0.1
 
-# Use the undirected version of the graph, as instructed
-graph_undirected <- as_undirected(graph, mode = "collapse")
-
 # Calculate degree of each node
-k <- degree(graph_undirected)
+k <- degree(graph)
 
 # Mean degree and mean squared degree
 mean_k <- mean(k)
 mean_k2 <- mean(k^2)
 
-# testing other graph direction values
-graph2 <- graph_from_data_frame(links, directed = FALSE, vertices = nodes)
-graph3 <- graph <- as_undirected(graph, mode = "each")
-graph4 <- graph <- as_undirected(graph, mode = "mutual")
-
-# check edge counts
-igraph::ecount(graph2)
-igraph::ecount(graph_undirected)
-
-# Apply the formula: βc = μ * <k> / <k^2>
-mu * mean(degree(graph_undirected)) / (mean(degree(graph_undirected)^2))
-mu * mean(degree(graph)) / (mean(degree(graph)^2))
-mu * mean(degree(graph2)) / (mean(degree(graph2)^2))
-mu * mean(degree(graph3)) / (mean(degree(graph3)^2))
-mu * mean(degree(graph4)) / (mean(degree(graph4)^2))
-
-# the threshold
-beta_c <- mu * mean(degree(graph_undirected)) / (mean(degree(graph_undirected)^2))
+# Calculate threshold with our formula: βc = μ * <k> / <k^2>
+beta_c <- mu * mean(degree(graph)) / (mean(degree(graph)^2))
 
 # Output the result
 paste0("Theoretical epidemic threshold βc is approximately: ", round(beta_c, 5),
@@ -362,12 +348,10 @@ sim_sir <- function(g, beta, mu, seeds){
 ```
 
 Now we run the simulations over different values. Since our critical
-threshold was 0.00535, we select 2 values smaller than the threshold and
-2 above.
+threshold was \_\_\_\_\_\_\_, we select 2 values smaller than the
+threshold and 2 above.
 
 ```{r}
-# use undirected graph
-graph_undirected <- as_undirected(graph, mode = "collapse")
 
 # set the thresholds, β, to test （lower than, close to, or higher than βc）
 beta_vals <- c(0, 0.002, 0.005, beta_c, 0.01, 0.02, 0.1)
@@ -377,8 +361,8 @@ mu <- 0.1
 
 # randomly set 1% as seeds - this is 12 nodes (of our 1133 total)
 set.seed(123)
-num_seeds <- ceiling(0.01 * vcount(graph_undirected))
-seeds <- sample(1:vcount(graph_undirected), num_seeds)
+num_seeds <- ceiling(0.01 * vcount(graph))
+seeds <- sample(1:vcount(graph), num_seeds)
 
 # run n times of simulation for each β. Calculate infection total for each. 
 n_runs <- 10
@@ -387,7 +371,7 @@ results <- data.frame()
 for(beta in beta_vals){
   final_counts <- c()
   for(i in 1:n_runs){
-    sim <- sim_sir(graph_undirected, beta, mu, seeds)
+    sim <- sim_sir(graph, beta, mu, seeds)
     final_counts <- c(final_counts, length(unique(sim$inf)))
   }
   avg_inf <- mean(final_counts)
@@ -434,17 +418,19 @@ the previous).
 ```{r}
 # set the seeds for consistency in the starting infection nodes:
 set.seed(123)
-num_seeds <- ceiling(0.01 * vcount(graph_undirected))
-seeds <- sample(1:vcount(graph_undirected), num_seeds)
+num_seeds <- ceiling(0.01 * vcount(graph))
+seeds <- sample(1:vcount(graph), num_seeds)
 
 # plot the outputs over time
 results <- map_dfr(seq(0,0.1,0.005), # beta range
         \(beta){
-          realization <- sim_sir(graph_undirected,beta,mu,seeds) # make a realization for each beta
-        data.frame(beta,ninf=nrow(realization)) # create dataframe row
+          realization <- sim_sir(graph,beta,mu,seeds) # make a realization for each beta
+        data.frame(beta, 
+                   ninf=nrow(realization)) # create dataframe column for beta and for number infected
         })
 
-results %>% ggplot(aes(x=beta,y=ninf))+ geom_point()+
+results %>% ggplot(aes(x=beta,y=ninf))+ 
+  geom_point()+
   geom_line(color="red", alpha=0.5)+
   geom_vline(xintercept = beta_c,linetype=2)
 ```
@@ -455,7 +441,13 @@ between each value in the plot are also small - each representing a 0.5%
 increase in the beta threshold ($\beta = 0.005$).
 
 With such a low critical threshold, we are very likely to end up with an
-epidemic in this model.
+epidemic in this model. Any growth is likely to lead to an epidemic.
+
+The basic reproduction number:
+
+```{r}
+
+```
 
 <br> <br>
 
@@ -465,9 +457,67 @@ epidemic in this model.
 
 #### b) The difference in the time of the peak of infection (when most infections happen).
 
-First, we identify our best 1% of seeds to find the 1% of seeds that
-will most rapidly spread the rumors. In the email settings this would be
-represented by a centrality metric. We will use the
+First, we set our very high β. Since our actual threshold βc is VERY low
+(\<0.01), we chose a beta value that may seem low but is actually very
+high relative to our value.
+
+We select β = 0.15
+
+```{r}
+# set the comparatively high beta
+beta_high <- 0.15  
+
+# Keep the same parameters and set our 
+mu <- 0.1
+
+# 1) Random seeds (baseline case)
+set.seed(123)
+num_seeds <- ceiling(0.01 * vcount(graph))
+random_seeds <- sample(1:vcount(graph), num_seeds)
+
+# 2) Strategic seed selection using different centrality measures
+
+# Option 1: Degree centrality (nodes with most connections)
+degree_cent <- degree(graph)
+degree_seeds <- order(degree_cent, decreasing = TRUE)[1:num_seeds]
+
+# Option 2: Betweenness centrality (nodes that bridge different parts)
+betweenness_cent <- betweenness(graph)
+betweenness_seeds <- order(betweenness_cent, decreasing = TRUE)[1:num_seeds]
+
+# Option 3: Eigenvector centrality (nodes connected to important nodes)
+eigen_cent <- eigen_centrality(graph)$vector
+eigen_seeds <- order(eigen_cent, decreasing = TRUE)[1:num_seeds]
+
+# Option 4: PageRank centrality
+pagerank_cent <- page_rank(graph)$vector
+pagerank_seeds <- order(pagerank_cent, decreasing = TRUE)[1:num_seeds]
+
+
+
+```
+
+Choose the centrality measure based on \_\_\_\_ because of \_\_\_\_\_
+
+From this, we have our 1% of central nodes (which is equal to 12 nodes
+in our data) and we now compare the random selection vs targeted
+selection to see how rapidly the epidemic can spread.
+
+```{r}
+## run simulations based on each of the selected and random nodes
+```
+
+Plot together to compare trends in infection over time:
+
+```{r}
+## line plot with both matched, or 2 plots if we show each of susceptible, infected and recovered
+
+```
+
+Summary - we can show that targeted infection. I.e. those who are the
+most influential in the email system being the first ones to spread the
+rumor can make the rumor spread faster than if random people in the
+network try to start the rumor.
 
 ### 4) Using the same β, design a “quarantine strategy”: at time step t=3 or 4, quarantine of 20% the susceptible population. You can model quarantine by temporally removing these nodes. Release the quarantined nodes 8 time steps later, making them susceptible again. Measure the difference with respect to no quarantine.
 
