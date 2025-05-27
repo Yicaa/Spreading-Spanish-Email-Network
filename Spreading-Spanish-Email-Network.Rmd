@@ -344,7 +344,7 @@ sim_sir <- function(g, beta, mu, seeds){
       table <- rbind(table, data.frame(t=t, inf=new_inf))
     }
   }
-  table
+  distinct(table) # adding distinct function to keep only unique nodes at each stage, avoiding repeated counts from infections to multiple neighbours in the same time period
 }
 
 ```
@@ -443,7 +443,8 @@ results <- map_dfr(seq(0,0.1,0.005), # beta range
 results %>% ggplot(aes(x=beta,y=ninf))+ 
   geom_point()+
   geom_line(color="red", alpha=0.5)+
-  geom_vline(xintercept = beta_c,linetype=2)
+  geom_vline(xintercept = beta_c,linetype=2)+
+  labs(title = "Comaparing total infections to beta values")
 ```
 
 We see the trend holds. There is a very sharp increase around the
@@ -453,24 +454,30 @@ increase in the beta threshold ($\beta = 0.005$).
 
 With such a low critical threshold, we are very likely to end up with an
 epidemic in this model. Any growth is likely to lead to an epidemic.
+This is seen because our critical beta value is below 1% (around
+0.535%). This means that in the following questions, when we select any
+1% sample, whether it is random or targeted, it will likely lead to an
+epidemic.
 
-The basic reproduction number (R₀) when beta is 0.02:
+To illustrate this, we see the basic reproduction number with 1 and 2
+percent infection. The basic reproduction number (R₀) when beta is 0.02:
 
 ```{r}
-# Parameters
 mu <- 0.1  # Recovery rate
-beta <- 0.02  # Example infection rate (can try multiple values)
 
-# Calculate R₀
-R0 <- (beta / mu) * (mean_k2 / mean_k)
+# Calculate R₀ options a
+R0_1 <- (0.01 / mu) * (mean_k2 / mean_k)
+R0_2 <- (0.02 / mu) * (mean_k2 / mean_k)
 
-# Output result
-paste0("Basic reproduction number R₀ ≈ ", round(R0, 3))
+# print result
+paste0("Basic reproduction number R₀ ≈ ", round(R0_1, 3), " with a 1% infection rate. Or, ", round(R0_2, 3), " with a 2% infection rate.")
 ```
 
 R₀ \> 1 means the epidemic is likely to spread. We obtained an R₀ of
 3.738, that is, very probable to spread, when the infection probability
 per contact per time step is only 2%.
+
+Seems like these rumors will be spreading in the university!
 
 <br> <br>
 
@@ -486,41 +493,33 @@ high relative to our value.
 
 We select β = 0.15
 
+We compare the random seeds to Degree centrality and PageRank to compare
+a more simple measure to a more rich measure. These two should be
+correlated, but we include both to see if the more rich PageRank
+calculation identifies nodes which lead to more rapid spreading.
+
 ```{r}
-# set the comparatively high beta
+# set the comparatively high beta and keep our same recovery rate.
 beta_high <- 0.15  
-
-# Keep the same parameters and set our 
 mu <- 0.1
-
-# 1) Random seeds (baseline case)
-set.seed(123)
 num_seeds <- ceiling(0.01 * vcount(graph))
+
+## Collect each type of sample to compare the outcomes
+# 1. Random selection (baseline)
+set.seed(123)
 random_seeds <- sample(1:vcount(graph), num_seeds)
 
-# 2) Strategic seed selection using different centrality measures
-
-# Option 1: Degree centrality (nodes with most connections)
+# 2. Degree centrality 
 degree_cent <- degree(graph)
 degree_seeds <- order(degree_cent, decreasing = TRUE)[1:num_seeds]
 
-# Option 2: Betweenness centrality (nodes that bridge different parts)
-betweenness_cent <- betweenness(graph)
-betweenness_seeds <- order(betweenness_cent, decreasing = TRUE)[1:num_seeds]
-
-# Option 3: Eigenvector centrality (nodes connected to important nodes)
-eigen_cent <- eigen_centrality(graph)$vector
-eigen_seeds <- order(eigen_cent, decreasing = TRUE)[1:num_seeds]
-
-# Option 4: PageRank centrality
+# 3. PageRank 
 pagerank_cent <- page_rank(graph)$vector
 pagerank_seeds <- order(pagerank_cent, decreasing = TRUE)[1:num_seeds]
 
-
-
+# check the betweenness measures arent' identical
+identical(degree_seeds, pagerank_seeds)
 ```
-
-Choose the centrality measure based on \_\_\_\_ because of \_\_\_\_\_
 
 From this, we have our 1% of central nodes (which is equal to 12 nodes
 in our data) and we now compare the random selection vs targeted
@@ -528,12 +527,68 @@ selection to see how rapidly the epidemic can spread.
 
 ```{r}
 ## run simulations based on each of the selected and random nodes
+random_sim <- sim_sir(graph, beta_high, mu, random_seeds)
+degree_sim <- sim_sir(graph, beta_high, mu, degree_seeds)
+pagerank_sim <- sim_sir(graph, beta_high, mu, pagerank_seeds)
 ```
 
-Plot together to compare trends in infection over time:
+a) Calculate the total number of infections:
+
+Of our total, 1,133 people in the university network, we see that nearly
+all are infected in each model. This is because of the
+
+```{r}
+# we use the unique option to ensure we have properly accounted for any duplicates (although this appears to function properly)
+rand_num_inf <- length(unique(random_sim$inf))
+deg_num_inf <- length(unique(degree_sim$inf))
+pager_num_inf <- length(unique(pagerank_sim$inf))
+
+
+
+```
+
+Print all of our results for total infections. They are relatively
+similar at this high value. Which is not surprising.
+
+```{r}
+cat(
+  "Of the ", vcount(graph), " nodes. We see the following under each setting:\n",
+  "Random selection: ", rand_num_inf, " (equal to ", round(rand_num_inf/vcount(graph)*100,2), "%)\n",
+  "Degree centrality: ", deg_num_inf, " (equal to ", round(deg_num_inf/vcount(graph)*100,2), "%)\n",
+    "Random selection: ", pager_num_inf, " (equal to ", round(pager_num_inf/vcount(graph)*100,2), "%)")
+
+```
+
+b) show the total infections over time to compare peaks
+
+First, aggregate the data into one table from the 3 outputs
 
 ```{r}
 ## line plot with both matched, or 2 plots if we show each of susceptible, infected and recovered
+# add labels to merge the DF 
+random_sim$type <- "Random"
+degree_sim$type <- "Degree centrality"
+pagerank_sim$type <- "PageRank"
+
+results <- rbind(random_sim, degree_sim, pagerank_sim)
+table(results$type)
+```
+
+We now have a long table with our 3 data points.
+
+```{r}
+## aggregate the number of infections by each selection method first then plot
+results |> 
+  group_by(type, t) |> 
+  summarise(sum_inf = n(), .groups = 'drop') |> 
+  ggplot(aes(x = t, y = sum_inf, group = type, colour = type)) +
+  geom_line() +
+  labs(title = "Comparison of infection trends with β=15%, targeted vs random selection",
+       y = "Number of infections",
+       x = "Time period",
+       colour = "Selection method") + 
+  theme_minimal() + # Or your preferred theme
+  theme(axis.title.y = element_text(angle = 90))
 
 ```
 
@@ -541,6 +596,58 @@ Summary - we can show that targeted infection. I.e. those who are the
 most influential in the email system being the first ones to spread the
 rumor can make the rumor spread faster than if random people in the
 network try to start the rumor.
+
+PageRank is able to create a slightly faster infection peak and slightly
+higher than the degree centrality measure as hypothesised. However these
+2 are highly correlated.
+
+The peaks between each network are comparable however, because we have
+such a high beta value. Each selection method has a peak of around 225
+infections on their biggest day of spreading. The only real difference
+is a delay in the occurrence of the peak spreading. To illustrate
+whether the peaks differ at other levels, we quickly create a model with
+the beta infection rate as 3x the critical beta value, (which would be
+equal to just over 1.5% and almost 10 times less infectious than the
+above plot:
+
+```{r}
+## comapring with new more moderate (but still high relative to critical threshold) beta value
+beta_high2 <- beta_c*3 
+beta_high2
+random_sim <- sim_sir(graph, beta_high2, mu, random_seeds)
+degree_sim <- sim_sir(graph, beta_high2, mu, degree_seeds)
+pagerank_sim <- sim_sir(graph, beta_high2, mu, pagerank_seeds)
+
+# add labels, join and check total values. 
+random_sim$type <- "Random"
+degree_sim$type <- "Degree centrality"
+pagerank_sim$type <- "PageRank"
+
+results <- rbind(random_sim, degree_sim, pagerank_sim)
+table(results$type) # we see the total infections are much lower. 
+
+## now plot again to compare the trends. 
+results |> 
+  group_by(type, t) |> 
+  summarise(sum_inf = n(), .groups = 'drop') |> 
+  ggplot(aes(x = t, y = sum_inf, group = type, colour = type)) +
+  geom_line() +
+  labs(title = paste0("Comparison of infection trends with β=",round(beta_high2*100,2),"%, targeted vs random selection"),
+       y = "Number of infections",
+       x = "Time period",
+       colour = "Selection method") + 
+  theme_minimal() + # Or your preferred theme
+  theme(axis.title.y = element_text(angle = 90))
+
+
+```
+
+Here we see the similar trend but on a much smaller scale and with more
+visible noise. The Degree Centrality measure dies out almost by about
+period 40. At this stage, the random assignment is just starting to find
+it's peak values. Similarly, the infections drop off at the start for
+our random assignment when the selected samples immediately peak due to
+the importance of the infected nodes initially infected.
 
 ### 4) Using the same β, design a “quarantine strategy”: at time step t=3 or 4, quarantine of 20% the susceptible population. You can model quarantine by temporally removing these nodes. Release the quarantined nodes 8 time steps later, making them susceptible again. Measure the difference with respect to no quarantine.
 
