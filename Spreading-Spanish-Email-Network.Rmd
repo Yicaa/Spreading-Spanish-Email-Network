@@ -31,6 +31,7 @@ library(ggraph)
 library(ggthemes)
 library(here)
 library(caret)
+library(purrr)
 ```
 
 ## Read the data
@@ -542,6 +543,227 @@ rumor can make the rumor spread faster than if random people in the
 network try to start the rumor.
 
 ### 4) Using the same β, design a “quarantine strategy”: at time step t=3 or 4, quarantine of 20% the susceptible population. You can model quarantine by temporally removing these nodes. Release the quarantined nodes 8 time steps later, making them susceptible again. Measure the difference with respect to no quarantine.
+
+We will create firstly a new function with the quarantine strategy
+(based on our previous regular SIR model), where we quarantine 20% of
+the susceptible population at t=4, then release them at t=12.
+
+```{r}
+sim_sir_quarantine <- function(g, beta, mu, seeds, quarantine_t = 4, release_t = 12){
+  state <- rep(0, vcount(g))     # 0 = S, 1 = I, 2 = R, -1 = Quarantined
+  state[seeds] <- 1              # set initial spreaders
+  t <- 0
+  table <- data.frame(t=0, inf=seeds)
+  quarantine_group <- c()
+  
+  while(sum(state == 1) > 0){    # while there is still infected people
+    t <- t + 1
+    new_inf <- c()
+    
+    # quarantine 20% of susceptible nodes at time t = quarantine_t
+    if(t == quarantine_t){
+      susceptible_nodes <- which(state == 0)
+      set.seed(t)  # reproducibility
+      quarantine_group <- sample(susceptible_nodes, ceiling(0.2 * length(susceptible_nodes)))
+      state[quarantine_group] <- -1  # set them as "quarantined"
+    }
+
+    # release them back at time t = release_t
+    if(t == release_t && length(quarantine_group) > 0){
+      state[quarantine_group] <- 0  # become susceptible again
+    }
+
+    for(i in which(state == 1)){  # loop through infected nodes
+      neighbors <- neighbors(g, i)
+      for(j in neighbors){
+        if(state[j] == 0 && runif(1) < beta){
+          new_inf <- c(new_inf, j)
+        }
+      }
+      if(runif(1) < mu){
+        state[i] <- 2  # recover
+      }
+    }
+    
+    new_inf <- unique(new_inf)  # fix: avoid duplicate infections
+    state[new_inf] <- 1
+    if(length(new_inf) > 0){
+      table <- rbind(table, data.frame(t=t, inf=new_inf))
+    }
+  }
+  table
+}
+```
+
+Then, we will simulate 50 times with the regular SIR model and the SIR
+model with quarantine policies to observe the differences.
+
+```{r}
+# Run simulation 50 times with quarantine
+results_q <- replicate(50, {
+  sim <- sim_sir_quarantine(graph, beta, mu, seeds)
+  length(unique(sim$inf)) #register the total number of infected
+})
+
+# Run simulation 50 times without quarantine
+results_no_q <- replicate(50, {
+  sim <- sim_sir(graph, beta, mu, seeds)
+  length(unique(sim$inf)) #register the total number of infected
+})
+
+# Compare average results
+mean_q <- mean(results_q)
+mean_no_q <- mean(results_no_q)
+diff <- mean_no_q - mean_q
+
+paste0("With quarantine, avg infected = ", round(mean_q), 
+       "; without quarantine = ", round(mean_no_q), 
+       " → Difference = ", round(diff), " nodes.")
+
+```
+
+We surprisingly observed that after running 50 simulations for each
+strategy, the quarantine scenario resulted in a slightly **higher**
+average number of infected nodes (658 vs 649) then the model without
+quarantine policy, with a difference of -10 nodes.
+
+This suggests that the quarantine intervention, as implemented, was
+**not effective** in reducing spread.\
+
+Possible reasons include:
+
+-   Releasing quarantined susceptible nodes while the epidemic is still
+    active, thereby fueling further spread;
+
+-   Random selection of nodes to quarantine may not target critical
+    spreaders;
+
+-   Inherent stochastic variability in each simulation run.\
+
+    A more targeted quarantine strategy (e.g., based on node centrality)
+    might produce better results.
+
+We will plot a box plot to see if this difference is significant.
+
+```{r}
+# tidy the data for later visualization
+df_results <- data.frame(
+  infected = c(results_no_q, results_q),
+  strategy = rep(c("No Quarantine", "With Quarantine"), each = 10)
+)
+
+# Visualize the difference of results with boxplot
+ggplot(df_results, aes(x = strategy, y = infected, fill = strategy)) +
+  geom_boxplot(alpha = 0.5, width = 0.5, outlier.shape = NA) +
+  geom_jitter(width = 0.1, size = 2, alpha = 0.7) +  # Each dot is one simulation
+  labs(title = "Comparison of Final Infection Counts",
+       x = "Strategy",
+       y = "Total number of infected nodes") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
+
+The results reveal that the **median infection counts are very similar**
+between the two strategies, indicating no strong difference in average
+outcomes. However, the **no-quarantine group exhibits slightly more
+variability**, with a few more extreme values on both ends.
+
+Interestingly, the **quarantine strategy does not significantly reduce
+infections** — in fact, it slightly increases the average count in this
+particular setting. This may be due to reintroducing susceptible nodes
+back into the network at a time when the infection is still active, or
+due to randomly quarantining non-critical nodes.
+
+Overall, this visualization suggests that **random quarantine of 20% of
+susceptible individuals at t = 4 is not an effective intervention at
+high infection rates (β = 0.15)**. Future strategies may benefit from
+more targeted approaches, such as quarantining high-centrality nodes.
+
+Apart from the final result, does the quarantine policy work at previous
+stages? Before finishing this question, we would like to plot the
+**trend of cumulative infected number with both policies**.
+
+```{r}
+# We run the simulation 50 times again, as previously we only obtained the final infected number, but we didn't register the infected number at each stage
+set.seed(123)
+runs_no_q <- map(1:50, function(i) {
+  sim <- sim_sir(graph, beta, mu, seeds)
+  sim$run <- i
+  sim
+})
+
+runs_q <- map(1:50, function(i) {
+  sim <- sim_sir_quarantine(graph, beta, mu, seeds)
+  sim$run <- i
+  sim
+})
+
+# Join simulation data from both policies
+all_runs_no_q <- bind_rows(runs_no_q) %>% mutate(strategy = "No Quarantine")
+all_runs_q <- bind_rows(runs_q) %>% mutate(strategy = "With Quarantine")
+
+all_runs <- bind_rows(all_runs_no_q, all_runs_q)
+
+```
+
+Now we calculate the cumulative infected number and its confidence
+interval in each stage for both policies, and then we visualize the
+results.
+
+```{r}
+cumulative_all <- all_runs %>%
+  group_by(strategy, run, t) %>%
+  summarise(new_inf = n(), .groups = "drop") %>%
+  group_by(strategy, run) %>%
+  arrange(t) %>%
+  mutate(cum_inf = cumsum(new_inf)) %>%
+  group_by(strategy, t) %>%
+  summarise(
+    mean_inf = mean(cum_inf),
+    sd_inf = sd(cum_inf),
+    ci_upper = mean_inf + 1.96 * sd_inf / sqrt(50),
+    ci_lower = mean_inf - 1.96 * sd_inf / sqrt(50),
+    .groups = "drop"
+  )
+
+ggplot(cumulative_all, aes(x = t, y = mean_inf, color = strategy, fill = strategy)) +
+  geom_line(size = 0.4) +
+  geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper), alpha = 0.3, color = NA) +
+  geom_vline(xintercept = 4, linetype = "dashed", color = "darkred") +
+  geom_vline(xintercept = 12, linetype = "dashed", color = "darkblue") +
+  annotate("text", x = 4, y = 0, label = "Start quarantine (t=4)", angle = 90, vjust = -0.5,hjust=-1, color = "darkred", size = 3) +
+  annotate("text", x = 12, y = 0, label = "End quarantine (t=12)", angle = 90, vjust = -0.5, hjust=-1, color = "darkblue", size = 3) +
+  labs(title = "Infection Spread Over Time",
+       subtitle = "With vs Without Quarantine (50 simulations each)",
+       x = "Time step (t)",
+       y = "Cumulative number of infected nodes") +
+  theme_minimal() +
+  theme(legend.title = element_blank())
+
+
+```
+
+This plot illustrates the average cumulative number of infected nodes
+over time across 50 simulations, comparing the **No Quarantine** and
+**With Quarantine** strategies, where the vertical dashed lines indicate
+the start (t = 4) and end (t = 12) of the quarantine period.
+
+We observe that both curves rise rapidly during the early time steps,
+with minor differences. After t = 12, the “With Quarantine” curve begins
+to diverge slightly, suggesting a delay in the epidemic's peak.
+
+However, the final infection sizes of both strategies are very close,
+and the overlapping confidence intervals indicate **no statistically
+significant difference**.\
+
+This suggests that the random quarantine of 20% susceptible individuals
+has **limited impact** on the epidemic’s total spread under a high
+transmission rate (β = 0.15).
+
+In conclusion, while the quarantine flattens the curve slightly, **a
+more targeted strategy may be needed** to produce meaningful reductions
+in total infections.
 
 ### 5) Suppose now that you can convince 5% of people in the network not to spread that information at all.
 
