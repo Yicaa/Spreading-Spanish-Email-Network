@@ -248,7 +248,7 @@ paste0("There are ", vcount(graph), " nodes and ", ecount(graph), " edges in our
 
 ```
 
-Now we p
+Now we start to calculate epidemic threshold using degree moments:
 
 ```{r}
 # Set recovery rate (mu) — use the standard 0.1 value
@@ -296,7 +296,7 @@ the values represent:
 
 The broad process is:
 
-1.   Set the inputs - graph, threshold, recovery rate & seeds.
+1.  Set the inputs - graph, threshold, recovery rate & seeds.
 
 2.  Initialise all nodes as 0 in period 0, except infected which are the
     randomly assigned seeds.
@@ -337,6 +337,7 @@ sim_sir <- function(g, beta, mu, seeds){
         state[i] <- 2
       }
     }
+    new_inf <- unique(new_inf) # fix: avoid duplicates from multiple infected neighbors
     state[new_inf] <- 1
     if(length(new_inf) > 0){  # only record when there is new infection
       table <- rbind(table, data.frame(t=t, inf=new_inf))
@@ -348,8 +349,8 @@ sim_sir <- function(g, beta, mu, seeds){
 ```
 
 Now we run the simulations over different values. Since our critical
-threshold was \_\_\_\_\_\_\_, we select 2 values smaller than the
-threshold and 2 above.
+threshold was 0.00535, we select 2 values smaller than the threshold and
+2 above.
 
 ```{r}
 
@@ -398,18 +399,27 @@ ggplot(results, aes(x=beta, y=avg_infected)) +
   theme_minimal()
 ```
 
-The plot shows a **sharp transition** in infection size between β =
-0.005 and β = 0.01, confirming the presence of an epidemic threshold.
-This matches our theoretical value of βc ≈ 0.00535. Below that,
-spreading is limited; above it, diffusion explodes.
+The plot clearly demonstrates the presence of an **epidemic threshold**
+in the network. When the infection rate β is below approximately
+0.00535, the average number of infected nodes remains low, indicating
+limited or failed spread. However, just beyond this value, there is a
+**sudden and sharp increase** in the number of infections, revealing a
+**nonlinear transition** typical of epidemic processes in complex
+networks.
 
-The average number of infected nodes increases steadily with β, which is
-consistent with the expectations from the SIR model.
+Furthermore, the plot shows a **monotonic increase** in the average
+infection size as β increases, aligning with theoretical expectations
+from the SIR model — higher infection rates naturally result in more
+widespread diffusion. Notably, the **uncertainty (standard deviation)**
+of infection size is highest around β = 0.01, suggesting that outcomes
+near the threshold are highly sensitive to stochastic factors such as
+seed selection and local network topology.
 
-At β = 0.01 and β = 0.02, the standard deviation becomes wider. This
-suggests that **spread outcomes are more variable** when the infection
-rate is high, likely due to the influence of network structure and
-randomness in seed placement.
+Overall, the plot illustrates a classic **epidemic threshold
+phenomenon**. Once β exceeds the critical value, even a small increase
+in the infection probability can lead to a disproportionately large
+outbreak, confirming the nonlinear nature of spreading processes in
+heterogeneous networks.
 
 Now we plot the general trend to try identify smoothness (note that this
 plot only has 1 run per point so could be considered less robust than
@@ -443,11 +453,23 @@ increase in the beta threshold ($\beta = 0.005$).
 With such a low critical threshold, we are very likely to end up with an
 epidemic in this model. Any growth is likely to lead to an epidemic.
 
-The basic reproduction number:
+The basic reproduction number (R₀) when beta is 0.02:
 
 ```{r}
+# Parameters
+mu <- 0.1  # Recovery rate
+beta <- 0.02  # Example infection rate (can try multiple values)
 
+# Calculate R₀
+R0 <- (beta / mu) * (mean_k2 / mean_k)
+
+# Output result
+paste0("Basic reproduction number R₀ ≈ ", round(R0, 3))
 ```
+
+R₀ \> 1 means the epidemic is likely to spread. We obtained an R₀ of
+3.738, that is, very probable to spread, when the infection probability
+per contact per time step is only 2%.
 
 <br> <br>
 
