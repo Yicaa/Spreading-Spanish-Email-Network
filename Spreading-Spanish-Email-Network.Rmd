@@ -485,8 +485,6 @@ Seems like these rumors will be spreading in the university!
 
 #### a) The difference in the total number of infected people
 
-#### b) The difference in the time of the peak of infection (when most infections happen).
-
 First, we set our very high β. Since our actual threshold βc is VERY low
 (\<0.01), we chose a beta value that may seem low but is actually very
 high relative to our value.
@@ -532,8 +530,6 @@ degree_sim <- sim_sir(graph, beta_high, mu, degree_seeds)
 pagerank_sim <- sim_sir(graph, beta_high, mu, pagerank_seeds)
 ```
 
-a) Calculate the total number of infections:
-
 Of our total, 1,133 people in the university network, we see that nearly
 all are infected in each model. This is because of the
 
@@ -559,7 +555,11 @@ cat(
 
 ```
 
-b) show the total infections over time to compare peaks
+We see that at such high beta values, almost everyone is infected
+regardless of the selection method. As we are above the critical
+threshold, it becomes an epidemic regardless of who starts it.
+
+#### b) The difference in the time of the peak of infection (when most infections happen).
 
 First, aggregate the data into one table from the 3 outputs
 
@@ -706,15 +706,17 @@ Then, we will simulate 50 times with the regular SIR model and the SIR
 model with quarantine policies to observe the differences.
 
 ```{r}
+# set the very high beta level to same as q3
+beta_high = 0.15
 # Run simulation 50 times with quarantine
 results_q <- replicate(50, {
-  sim <- sim_sir_quarantine(graph, beta, mu, seeds)
+  sim <- sim_sir_quarantine(graph, beta_high, mu, seeds)
   length(unique(sim$inf)) #register the total number of infected
 })
 
 # Run simulation 50 times without quarantine
 results_no_q <- replicate(50, {
-  sim <- sim_sir(graph, beta, mu, seeds)
+  sim <- sim_sir(graph, beta_high, mu, seeds)
   length(unique(sim$inf)) #register the total number of infected
 })
 
@@ -728,6 +730,16 @@ paste0("With quarantine, avg infected = ", round(mean_q),
        " → Difference = ", round(diff), " nodes.")
 
 ```
+
+YIJIA -\> The findings depend on how infectious the model is. I
+accidentally had beta = 10% and the vaccination did help ,But then I had
+it set to 1% and it doesn't help. So it seems like it depends which beta
+we have...the question says to use the beta value selected in Q3 but
+maybe we also show it at some other different levels below with other
+box plots just to show it helps at different levels (and I think we
+don't need to run 50 times each, it's too slow. 20 is plenty!)
+
+-   This is really good though - the box plots are especially nice
 
 We surprisingly observed that after running 50 simulations for each
 strategy, the quarantine scenario resulted in a slightly **higher**
@@ -874,9 +886,91 @@ in total infections.
 
 ### 5) Suppose now that you can convince 5% of people in the network not to spread that information at all.
 
+If we have 5% who will not spread information at all, they are
+effectively immune. This means we can treat the 5% of people like they
+had a vaccination. Or in our situation, more like they had a realisation
+that spreading rumors over the university email is bad and refuse to
+read or share any gossip. In this section we compare if the targeted or
+random vaccination works more effectively.
+
+As these people refuse to spread rumours, we call them *kind_people*.
+
 #### a) Choose those 5% randomly in the network. Simulate the SIR model above βc using 1% of the remaining nodes as seeds. Choose those seeds randomly.
 
+First we set our random 5% of nodes to make immune. These essentially
+are deleted, so we remove them from the model.
+
+We set our infectious rate to 5% as well (beta=0.05)
+
+```{r}
+set.seed(1234)
+# random vaccination campaign with 5% randomly selected - essentially delete them 
+kind_people_random <- sample(1:vcount(graph),
+                             vcount(graph)*0.05)
+graph_rand <- delete_vertices(graph, kind_people_random)
+
+# print our findings for info
+paste0("This random selection removed ", vcount(graph)-vcount(graph_rand), " nodes, and ", ecount(graph)-ecount(graph_rand), " edges from the graph")
+
+# now we set our 1% of seeds from the remaining nodes
+inf_seeds <- sample(1:vcount(graph_rand),
+                vcount(graph_rand)*0.01)
+
+# now create our random model
+realization_random <- sim_sir(graph_rand,
+                              beta = beta_c,
+                              mu,
+                              inf_seeds) %>%
+  group_by(t) %>% summarize(ninf=n())
+
+realization_random |> 
+  ggplot(aes(x = t, y = ninf)) +
+  geom_line() +
+  labs(title = paste0("Infection trend with randomly assigned nice people (non gossipers)"),
+       y = "Number of infections",
+       x = "Time period") + 
+  theme_minimal() + 
+  theme(axis.title.y = element_text(angle = 90))
+
+```
+
 #### b) Choose those 5% according to their centrality. Simulate the SIR model βc above using 1% of the remaining nodes as seeds. Choose those seeds randomly.
+
+We will use PageRank to select the 5% as this had the most extreme peak
+in Q3.
+
+```{r}
+# targeted selection of most influential  5% randomly selected - essentially delete them, using our exiting pagerank_cent calculations
+num_seeds <- vcount(graph)*0.05
+kind_people_pager <- order(pagerank_cent, decreasing = TRUE)[1:num_seeds]
+
+graph_pager <- delete_vertices(graph, kind_people_pager)
+
+# print our findings for info
+paste0("This pagerank selection removed ", vcount(graph)-vcount(graph_pager), " nodes, and ", ecount(graph)-ecount(graph_pager), " edges from the graph")
+
+# now we set our 1% of seeds from the remaining nodes
+inf_seeds <- sample(1:vcount(graph_pager),
+                vcount(graph_pager)*0.01)
+
+# now create our random model
+realization_pager <- sim_sir(graph_pager,
+                              beta = 0.05,
+                              mu,
+                              inf_seeds) %>%
+  group_by(t) %>% summarize(ninf=n())
+
+#plot
+realization_pager |> 
+  ggplot(aes(x = t, y = ninf)) +
+  geom_line() +
+  labs(title = paste0("Infection trend with targeted nice people (non gossipers)"),
+       y = "Number of infections",
+       x = "Time period") + 
+  theme_minimal() + 
+  theme(axis.title.y = element_text(angle = 90))
+
+```
 
 #### c) Measure the difference between both cases as you did in step 3.
 
