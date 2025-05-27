@@ -604,7 +604,7 @@ higher than the degree centrality measure as hypothesised. However these
 The peaks between each network are comparable however, because we have
 such a high beta value. Each selection method has a peak of around 225
 infections on their biggest day of spreading. The only real difference
-is a delay in the occurrence of the peak spreading. To illustrate
+is **a delay in the occurrence of the peak spreading**. To illustrate
 whether the peaks differ at other levels, we quickly create a model with
 the beta infection rate as 3x the critical beta value, (which would be
 equal to just over 1.5% and almost 10 times less infectious than the
@@ -702,20 +702,20 @@ sim_sir_quarantine <- function(g, beta, mu, seeds, quarantine_t = 4, release_t =
 }
 ```
 
-Then, we will simulate 50 times with the regular SIR model and the SIR
+Then, we will simulate 20 times with the regular SIR model and the SIR
 model with quarantine policies to observe the differences.
 
 ```{r}
 # set the very high beta level to same as q3
 beta_high = 0.15
-# Run simulation 50 times with quarantine
-results_q <- replicate(50, {
+# Run simulation 20 times with quarantine
+results_q <- replicate(20, {
   sim <- sim_sir_quarantine(graph, beta_high, mu, seeds)
   length(unique(sim$inf)) #register the total number of infected
 })
 
-# Run simulation 50 times without quarantine
-results_no_q <- replicate(50, {
+# Run simulation 20 times without quarantine
+results_no_q <- replicate(20, {
   sim <- sim_sir(graph, beta_high, mu, seeds)
   length(unique(sim$inf)) #register the total number of infected
 })
@@ -731,17 +731,7 @@ paste0("With quarantine, avg infected = ", round(mean_q),
 
 ```
 
-YIJIA -\> The findings depend on how infectious the model is. I
-accidentally had beta = 10% and the vaccination did help ,But then I had
-it set to 1% and it doesn't help. So it seems like it depends which beta
-we have...the question says to use the beta value selected in Q3 but
-maybe we also show it at some other different levels below with other
-box plots just to show it helps at different levels (and I think we
-don't need to run 50 times each, it's too slow. 20 is plenty!)
-
--   This is really good though - the box plots are especially nice
-
-We surprisingly observed that after running 50 simulations for each
+We surprisingly observed that after running 20 simulations for each
 strategy, the quarantine scenario resulted in a slightly **higher**
 average number of infected nodes (658 vs 649) then the model without
 quarantine policy, with a difference of -10 nodes.
@@ -804,15 +794,15 @@ stages? Before finishing this question, we would like to plot the
 **trend of cumulative infected number with both policies**.
 
 ```{r}
-# We run the simulation 50 times again, as previously we only obtained the final infected number, but we didn't register the infected number at each stage
+# We run the simulation 20 times again, as previously we only obtained the final infected number, but we didn't register the infected number at each stage
 set.seed(123)
-runs_no_q <- map(1:50, function(i) {
+runs_no_q <- map(1:20, function(i) {
   sim <- sim_sir(graph, beta, mu, seeds)
   sim$run <- i
   sim
 })
 
-runs_q <- map(1:50, function(i) {
+runs_q <- map(1:20, function(i) {
   sim <- sim_sir_quarantine(graph, beta, mu, seeds)
   sim$run <- i
   sim
@@ -854,7 +844,7 @@ ggplot(cumulative_all, aes(x = t, y = mean_inf, color = strategy, fill = strateg
   annotate("text", x = 4, y = 0, label = "Start quarantine (t=4)", angle = 90, vjust = -0.5,hjust=-1, color = "darkred", size = 3) +
   annotate("text", x = 12, y = 0, label = "End quarantine (t=12)", angle = 90, vjust = -0.5, hjust=-1, color = "darkblue", size = 3) +
   labs(title = "Infection Spread Over Time",
-       subtitle = "With vs Without Quarantine (50 simulations each)",
+       subtitle = "With vs Without Quarantine (20 simulations each)",
        x = "Time step (t)",
        y = "Cumulative number of infected nodes") +
   theme_minimal() +
@@ -883,6 +873,159 @@ transmission rate (β = 0.15).
 In conclusion, while the quarantine flattens the curve slightly, **a
 more targeted strategy may be needed** to produce meaningful reductions
 in total infections.
+
+<br>
+
+Now we had set a relatively high beta, 15%. We also wonder if the
+quarantine policy would work better while we have a **lower beta**.
+Therefore, we will try a new beta 1%, which is still higher than the
+critical threshold but is much lower than our previous 15%.
+
+Here we reproduce our previous work but with beta of 1%.
+
+```{r}
+# set a lower beta
+beta_high = 0.01
+# Run simulation 20 times with quarantine
+results_q <- replicate(20, {
+  sim <- sim_sir_quarantine(graph, beta_high, mu, seeds)
+  length(unique(sim$inf)) #register the total number of infected
+})
+
+# Run simulation 20 times without quarantine
+results_no_q <- replicate(20, {
+  sim <- sim_sir(graph, beta_high, mu, seeds)
+  length(unique(sim$inf)) #register the total number of infected
+})
+
+# Compare average results
+mean_q <- mean(results_q)
+mean_no_q <- mean(results_no_q)
+diff <- mean_no_q - mean_q
+
+paste0("With quarantine, avg infected = ", round(mean_q), 
+       "; without quarantine = ", round(mean_no_q), 
+       " → Difference = ", round(diff), " nodes.")
+
+```
+
+```{r}
+# tidy the data for later visualization
+df_results <- data.frame(
+  infected = c(results_no_q, results_q),
+  strategy = rep(c("No Quarantine", "With Quarantine"), each = 10)
+)
+
+# Visualize the difference of results with boxplot
+ggplot(df_results, aes(x = strategy, y = infected, fill = strategy)) +
+  geom_boxplot(alpha = 0.5, width = 0.5, outlier.shape = NA) +
+  geom_jitter(width = 0.1, size = 2, alpha = 0.7) +  # Each dot is one simulation
+  labs(title = "Comparison of Final Infection Counts (beta=0.01)",
+       x = "Strategy",
+       y = "Total number of infected nodes") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+```{r}
+# We run the simulation 20 times again, as previously we only obtained the final infected number, but we didn't register the infected number at each stage
+set.seed(123)
+runs_no_q <- map(1:20, function(i) {
+  sim <- sim_sir(graph, beta, mu, seeds)
+  sim$run <- i
+  sim
+})
+
+runs_q <- map(1:20, function(i) {
+  sim <- sim_sir_quarantine(graph, beta, mu, seeds)
+  sim$run <- i
+  sim
+})
+
+# Join simulation data from both policies
+all_runs_no_q <- bind_rows(runs_no_q) %>% mutate(strategy = "No Quarantine")
+all_runs_q <- bind_rows(runs_q) %>% mutate(strategy = "With Quarantine")
+
+all_runs <- bind_rows(all_runs_no_q, all_runs_q)
+```
+
+```{r}
+cumulative_all <- all_runs %>%
+  group_by(strategy, run, t) %>%
+  summarise(new_inf = n(), .groups = "drop") %>%
+  group_by(strategy, run) %>%
+  arrange(t) %>%
+  mutate(cum_inf = cumsum(new_inf)) %>%
+  group_by(strategy, t) %>%
+  summarise(
+    mean_inf = mean(cum_inf),
+    sd_inf = sd(cum_inf),
+    ci_upper = mean_inf + 1.96 * sd_inf / sqrt(50),
+    ci_lower = mean_inf - 1.96 * sd_inf / sqrt(50),
+    .groups = "drop"
+  )
+
+ggplot(cumulative_all, aes(x = t, y = mean_inf, color = strategy, fill = strategy)) +
+  geom_line(size = 0.4) +
+  geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper), alpha = 0.3, color = NA) +
+  geom_vline(xintercept = 4, linetype = "dashed", color = "darkred") +
+  geom_vline(xintercept = 12, linetype = "dashed", color = "darkblue") +
+  annotate("text", x = 4, y = 0, label = "Start quarantine (t=4)", angle = 90, vjust = -0.5,hjust=-1, color = "darkred", size = 3) +
+  annotate("text", x = 12, y = 0, label = "End quarantine (t=12)", angle = 90, vjust = -0.5, hjust=-1, color = "darkblue", size = 3) +
+  labs(title = "Infection Spread Over Time (beta=0.01)",
+       subtitle = "With vs Without Quarantine (20 simulations each)",
+       x = "Time step (t)",
+       y = "Cumulative number of infected nodes") +
+  theme_minimal() +
+  theme(legend.title = element_blank())
+
+```
+
+While our earlier simulations with a high infection rate (β = 0.15)
+showed **minimal differences between the quarantine and no-quarantine
+scenarios**, the results under a **lower infection rate (β = 0.01)**
+paint a very different picture.
+
+Surprisingly, we observed that the **average number of infections was
+actually higher with quarantine** (309 infected nodes on average) than
+without it (257), a difference of **-52 nodes**. This contrasts with the
+previous high-β case, where the quarantine group showed only a marginal
+increase (+9) in average infections.
+
+This reversal suggests that under low-transmission conditions, the
+quarantine intervention—at least in the way it is currently
+implemented—**can backfire**.
+
+Possible explanations include:
+
+-   **Random quarantine may remove non-critical nodes**, leaving core
+    transmission paths unaffected;
+
+-   **Reintroducing susceptible nodes too early** (at t = 12) when the
+    infection has not been fully contained may cause renewed spread;
+
+-   **Stochastic effects are stronger at lower β**, meaning small
+    changes can lead to large outcome variations.
+
+The boxplot clearly illustrates this: while the no-quarantine group
+still shows greater variability, the with-quarantine group registers
+**higher medians** and **consistently elevated infection counts**.
+
+Similarly, the cumulative infection curves show that the quarantine
+group **catches up and overtakes** the no-quarantine group after
+reintroduction of the susceptible nodes, despite an initial flattening
+effect.
+
+Taken together with our earlier findings, these results suggest that
+**randomly quarantining a portion of the population may not be an
+effective universal intervention**, and can even be detrimental under
+certain conditions. At lower transmission rates, a poorly timed or
+untargeted quarantine can lead to **worse overall outcomes**.
+
+Future strategies should explore **data-driven, targeted quarantine**
+approaches — such as removing high-centrality nodes or dynamically
+adjusting quarantine duration — to achieve more reliable suppression of
+spread across different epidemic scenarios.
 
 ### 5) Suppose now that you can convince 5% of people in the network not to spread that information at all.
 
