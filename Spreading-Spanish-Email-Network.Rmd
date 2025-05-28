@@ -515,7 +515,7 @@ degree_seeds <- order(degree_cent, decreasing = TRUE)[1:num_seeds]
 pagerank_cent <- page_rank(graph)$vector
 pagerank_seeds <- order(pagerank_cent, decreasing = TRUE)[1:num_seeds]
 
-# check the betweenness measures arent' identical
+# check the centrality measures arent' identical nodes for redundancy
 identical(degree_seeds, pagerank_seeds)
 ```
 
@@ -530,21 +530,20 @@ degree_sim <- sim_sir(graph, beta_high, mu, degree_seeds)
 pagerank_sim <- sim_sir(graph, beta_high, mu, pagerank_seeds)
 ```
 
-Of our total, 1,133 people in the university network, we see that nearly
-all are infected in each model. This is because of the
-
 ```{r}
 # we use the unique option to ensure we have properly accounted for any duplicates (although this appears to function properly)
 rand_num_inf <- length(unique(random_sim$inf))
 deg_num_inf <- length(unique(degree_sim$inf))
 pager_num_inf <- length(unique(pagerank_sim$inf))
 
-
-
 ```
 
 Print all of our results for total infections. They are relatively
 similar at this high value. Which is not surprising.
+
+Of our total, 1,133 people in the university network, we see that nearly
+all are infected in each model. This is because of the high infection
+rate above our critical threshold leaving to long run epidemics.
 
 ```{r}
 cat(
@@ -604,11 +603,25 @@ higher than the degree centrality measure as hypothesised. However these
 The peaks between each network are comparable however, because we have
 such a high beta value. Each selection method has a peak of around 225
 infections on their biggest day of spreading. The only real difference
-is **a delay in the occurrence of the peak spreading**. To illustrate
-whether the peaks differ at other levels, we quickly create a model with
-the beta infection rate as 3x the critical beta value, (which would be
-equal to just over 1.5% and almost 10 times less infectious than the
-above plot:
+is **a delay in the occurrence of the peak spreading**.
+
+```{r}
+# calculate the peak period in each
+results |> 
+  group_by(type, t) |> 
+  summarise(sum_inf = n(), .groups = 'drop') |> 
+  group_by(type) |> filter(sum_inf == max(sum_inf))
+```
+
+We see that the peak for PageRank is period 3 (231 infections), Degree
+centrality is period 3 as well, (218 infections) and the random
+allocation was period 5 (223 infections). So there was a 2 period
+acceleration in the peak by using targeted nodes.
+
+To illustrate whether the peaks differ at other levels, we quickly
+create a model with the beta infection rate as 3x the critical beta
+value, (which would be equal to just over 1.5% and almost 10 times less
+infectious than the above plot:
 
 ```{r}
 ## comapring with new more moderate (but still high relative to critical threshold) beta value
@@ -703,7 +716,8 @@ sim_sir_quarantine <- function(g, beta, mu, seeds, quarantine_t = 4, release_t =
 ```
 
 Then, we will simulate 20 times with the regular SIR model and the SIR
-model with quarantine policies to observe the differences.
+model with quarantine policies to observe the differences in the long
+run and short run (during the quarantine period).
 
 ```{r}
 # set the very high beta level to same as q3
@@ -731,28 +745,22 @@ paste0("With quarantine, avg infected = ", round(mean_q),
 
 ```
 
+**Long-run outcomes with high beta value.**
+
 We surprisingly observed that after running 20 simulations for each
-strategy, the quarantine scenario resulted in a slightly **higher**
-average number of infected nodes (658 vs 649) then the model without
-quarantine policy, with a difference of -10 nodes.
+strategy, the quarantine scenario resulted in almost equivalent total
+infections (1029 vs 1051) then the model without quarantine policy, with
+a difference of 22 less infections.
 
-This suggests that the quarantine intervention, as implemented, was
-**not effective** in reducing spread.\
+This suggests that the quarantine intervention is **not effective** in
+reducing spread in the long run. This tells us that the beta value is so
+high that an epidemic will occur in the long run if the virus has time
+to spread freely (i.e. the quarantine period is temporary). The
+following sections will compare and provide more detail on the random
+allocation.
 
-Possible reasons include:
-
--   Releasing quarantined susceptible nodes while the epidemic is still
-    active, thereby fueling further spread;
-
--   Random selection of nodes to quarantine may not target critical
-    spreaders;
-
--   Inherent stochastic variability in each simulation run.\
-
-    A more targeted quarantine strategy (e.g., based on node centrality)
-    might produce better results.
-
-We will plot a box plot to see if this difference is significant.
+We will plot a box plot to compare the long run total infections for
+each model.
 
 ```{r}
 # tidy the data for later visualization
@@ -765,7 +773,7 @@ df_results <- data.frame(
 ggplot(df_results, aes(x = strategy, y = infected, fill = strategy)) +
   geom_boxplot(alpha = 0.5, width = 0.5, outlier.shape = NA) +
   geom_jitter(width = 0.1, size = 2, alpha = 0.7) +  # Each dot is one simulation
-  labs(title = "Comparison of Final Infection Counts",
+  labs(title = "Comparison of Final Infection Counts, β = 0.15",
        x = "Strategy",
        y = "Total number of infected nodes") +
   theme_minimal() +
@@ -784,26 +792,29 @@ particular setting. This may be due to reintroducing susceptible nodes
 back into the network at a time when the infection is still active, or
 due to randomly quarantining non-critical nodes.
 
-Overall, this visualization suggests that **random quarantine of 20% of
-susceptible individuals at t = 4 is not an effective intervention at
-high infection rates (β = 0.15)**. Future strategies may benefit from
-more targeted approaches, such as quarantining high-centrality nodes.
+Overall, this visualization suggests that **random temporary quarantine
+of 20% of susceptible individuals at t = 4 to t=12 is not an effective
+intervention at high infection rates (β = 0.15)**. Future strategies may
+benefit from more targeted approaches, such as quarantining
+high-centrality nodes.
 
-Apart from the final result, does the quarantine policy work at previous
-stages? Before finishing this question, we would like to plot the
-**trend of cumulative infected number with both policies**.
+**Short-term quarantine outcomes with high beta value**
+
+Apart from the final result, does the quarantine policy work throughout
+the quarantine? If it can slow the spread, we can at least show the
+quarantine works to some extent.
 
 ```{r}
 # We run the simulation 20 times again, as previously we only obtained the final infected number, but we didn't register the infected number at each stage
 set.seed(123)
 runs_no_q <- map(1:20, function(i) {
-  sim <- sim_sir(graph, beta, mu, seeds)
+  sim <- sim_sir(graph, beta_high, mu, seeds)
   sim$run <- i
   sim
 })
 
 runs_q <- map(1:20, function(i) {
-  sim <- sim_sir_quarantine(graph, beta, mu, seeds)
+  sim <- sim_sir_quarantine(graph, beta_high, mu, seeds)
   sim$run <- i
   sim
 })
@@ -817,7 +828,7 @@ all_runs <- bind_rows(all_runs_no_q, all_runs_q)
 ```
 
 Now we calculate the cumulative infected number and its confidence
-interval in each stage for both policies, and then we visualize the
+interval in each time period for both policies, and visualize the
 results.
 
 ```{r}
@@ -837,13 +848,13 @@ cumulative_all <- all_runs %>%
   )
 
 ggplot(cumulative_all, aes(x = t, y = mean_inf, color = strategy, fill = strategy)) +
-  geom_line(size = 0.4) +
+  geom_line(linewidth = 0.4) +
   geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper), alpha = 0.3, color = NA) +
   geom_vline(xintercept = 4, linetype = "dashed", color = "darkred") +
   geom_vline(xintercept = 12, linetype = "dashed", color = "darkblue") +
   annotate("text", x = 4, y = 0, label = "Start quarantine (t=4)", angle = 90, vjust = -0.5,hjust=-1, color = "darkred", size = 3) +
   annotate("text", x = 12, y = 0, label = "End quarantine (t=12)", angle = 90, vjust = -0.5, hjust=-1, color = "darkblue", size = 3) +
-  labs(title = "Infection Spread Over Time",
+  labs(title = "Infection Spread with quarantine, β = 0.15",
        subtitle = "With vs Without Quarantine (20 simulations each)",
        x = "Time step (t)",
        y = "Cumulative number of infected nodes") +
@@ -854,17 +865,28 @@ ggplot(cumulative_all, aes(x = t, y = mean_inf, color = strategy, fill = strateg
 ```
 
 This plot illustrates the average cumulative number of infected nodes
-over time across 50 simulations, comparing the **No Quarantine** and
+over time across 20 simulations, comparing the **No Quarantine** and
 **With Quarantine** strategies, where the vertical dashed lines indicate
 the start (t = 4) and end (t = 12) of the quarantine period.
 
-We observe that both curves rise rapidly during the early time steps,
-with minor differences. After t = 12, the “With Quarantine” curve begins
-to diverge slightly, suggesting a delay in the epidemic's peak.
+We observe that the quarantine period does reduce infections. With on
+average 138.25 fewer infections by period 12 (the end of the quarantine
+period). We see that the growth in infections is still rapid with
+quarantine, so it doesn't flatten the rate of spreading very
+effectively.
 
-However, the final infection sizes of both strategies are very close,
-and the overlapping confidence intervals indicate **no statistically
-significant difference**.\
+```{r}
+# check differences in counts at end of quarantine
+no_q_t12 <- cumulative_all |> 
+  filter(t == 12) |> select(strategy, mean_inf) |> filter(strategy == "No Quarantine") |> pull(mean_inf)
+yes_q_t12 <- cumulative_all |> 
+  filter(t == 12) |> select(strategy, mean_inf) |> filter(strategy == "With Quarantine") |> pull(mean_inf)
+
+paste0("The average infections without quarantine at time 12 was: ", no_q_t12, " while with quarantine, it reduced to ", yes_q_t12, " in time 12. Indicating a reduction of ", no_q_t12-yes_q_t12, " at the end of the quarantine period.")
+```
+
+As discussed above, in the long run, an epidemic emerges and there are
+no differences.
 
 This suggests that the random quarantine of 20% susceptible individuals
 has **limited impact** on the epidemic’s total spread under a high
@@ -876,10 +898,13 @@ in total infections.
 
 <br>
 
+**Testing with lower beta (still above threshold).**
+
 Now we had set a relatively high beta, 15%. We also wonder if the
-quarantine policy would work better while we have a **lower beta**.
-Therefore, we will try a new beta 1%, which is still higher than the
-critical threshold but is much lower than our previous 15%.
+quarantine policy would work better while we have lower beta that still
+sits above our critical threshold. Therefore, we will try a new beta 1%,
+which is still higher than the critical threshold but is much lower than
+our previous 15%.
 
 Here we reproduce our previous work but with beta of 1%.
 
@@ -909,6 +934,9 @@ paste0("With quarantine, avg infected = ", round(mean_q),
 
 ```
 
+We actually see the infection rate is higher without quarantine in the
+long run. Overall infections are lower however. We test more robustly:
+
 ```{r}
 # tidy the data for later visualization
 df_results <- data.frame(
@@ -927,17 +955,22 @@ ggplot(df_results, aes(x = strategy, y = infected, fill = strategy)) +
   theme(legend.position = "none")
 ```
 
+We see that in the long run, quarantine appears to have a slightly lower
+total infection rate, but it is not a clear significant difference. At
+the lower infection we see some cases with little spread too - likely
+due to lowly connected nodes being the initial spreaders.
+
 ```{r}
 # We run the simulation 20 times again, as previously we only obtained the final infected number, but we didn't register the infected number at each stage
 set.seed(123)
 runs_no_q <- map(1:20, function(i) {
-  sim <- sim_sir(graph, beta, mu, seeds)
+  sim <- sim_sir(graph, beta_high, mu, seeds)
   sim$run <- i
   sim
 })
 
 runs_q <- map(1:20, function(i) {
-  sim <- sim_sir_quarantine(graph, beta, mu, seeds)
+  sim <- sim_sir_quarantine(graph, beta_high, mu, seeds)
   sim$run <- i
   sim
 })
@@ -948,6 +981,8 @@ all_runs_q <- bind_rows(runs_q) %>% mutate(strategy = "With Quarantine")
 
 all_runs <- bind_rows(all_runs_no_q, all_runs_q)
 ```
+
+And summarise + plot again for trend over time.
 
 ```{r}
 cumulative_all <- all_runs %>%
@@ -977,7 +1012,8 @@ ggplot(cumulative_all, aes(x = t, y = mean_inf, color = strategy, fill = strateg
        x = "Time step (t)",
        y = "Cumulative number of infected nodes") +
   theme_minimal() +
-  theme(legend.title = element_blank())
+  theme(legend.title = element_blank())+
+  lims(x=c(0,100))
 
 ```
 
@@ -987,14 +1023,24 @@ scenarios**, the results under a **lower infection rate (β = 0.01)**
 paint a very different picture.
 
 Surprisingly, we observed that the **average number of infections was
-actually higher with quarantine** (309 infected nodes on average) than
-without it (257), a difference of **-52 nodes**. This contrasts with the
-previous high-β case, where the quarantine group showed only a marginal
-increase (+9) in average infections.
+actually higher with quarantine** (312 infected nodes on average) than
+without it (266), a difference of **-46 nodes**. This contrasts with the
+previous high-β case, which was comparable in the long run.
+
+[**\~\~\~ PLEASE CHECK ALL THE UPDATES ARE CLEAR... I think the second
+plot had the wrong beta value (wasn't at 0.01 so the plots have
+updated). Hopefully I haven't actually ruined it though, but the second
+plot now has much lower growth... I am not sure it looks correct to be
+honest...**]{.underline}
+
+[**\~\~\~ Careful with copying the AI interepretations too! It's very
+detailed and quite hard to interpret. I think simple and shorter is
+better (even if you get AI to summarise their own output it is easier
+for us to check ourselves!)**]{.underline}
 
 This reversal suggests that under low-transmission conditions, the
-quarantine intervention—at least in the way it is currently
-implemented—**can backfire**.
+quarantine intervention—at least in the way it is currently implemented—
+is ineffective.
 
 Possible explanations include:
 
@@ -1006,10 +1052,6 @@ Possible explanations include:
 
 -   **Stochastic effects are stronger at lower β**, meaning small
     changes can lead to large outcome variations.
-
-The boxplot clearly illustrates this: while the no-quarantine group
-still shows greater variability, the with-quarantine group registers
-**higher medians** and **consistently elevated infection counts**.
 
 Similarly, the cumulative infection curves show that the quarantine
 group **catches up and overtakes** the no-quarantine group after
@@ -1080,7 +1122,17 @@ realization_random |>
 #### b) Choose those 5% according to their centrality. Simulate the SIR model βc above using 1% of the remaining nodes as seeds. Choose those seeds randomly.
 
 We will use PageRank to select the 5% as this had the most extreme peak
-in Q3.
+in Question 3.
+
+we see that this targeted removal of nodes also takes many more
+potential connections as over 1800 edges are removed from the plot. This
+is over 3x as many potential connections removed from random selection
+of the 5% of nice people (vaccinated).
+
+We see that the trend when removing the 5% of influential nodes is much
+more effective at killing any growth in infections. In fact we see that
+the infection actually dies out by period 15 and the spread of
+information stops.
 
 ```{r}
 # targeted selection of most influential  5% randomly selected - essentially delete them, using our exiting pagerank_cent calculations
@@ -1098,7 +1150,7 @@ inf_seeds <- sample(1:vcount(graph_pager),
 
 # now create our random model
 realization_pager <- sim_sir(graph_pager,
-                              beta = 0.05,
+                              beta = beta_c,
                               mu,
                               inf_seeds) %>%
   group_by(t) %>% summarize(ninf=n())
@@ -1116,6 +1168,30 @@ realization_pager |>
 ```
 
 #### c) Measure the difference between both cases as you did in step 3.
+
+Using the code from the slides, we plot the 2 trends to compare the
+outputs over time initially.
+
+Let's visualize the evolution together with the realization with no
+vaccination we got earlier.
+
+We see that Random vaccination is better than no vaccination. But
+targeted is much more effective and essentially flattened the curve.
+Growth never got exponential.
+
+```{r}
+ggplot() + 
+  geom_line(data=realization,aes(x=t,y=ninf,col="No Vaccination")) +
+  geom_line(data=realization_random,aes(x=t,y=ninf,col="Vacc. Random"))+
+  geom_line(data=realization_targeted,aes(x=t,y=ninf,col="Vacc. Targeted"))
+```
+
+[**\~\~\~\~ TO REVIEW... There is too much text here and seems to be all
+AI output... really need to simplify. But I can come
+back.**]{.underline} Blas was clear to avoid having obvious AI output
+and the text and code is very clear. The code in the workshop is much
+more simple, so it's very clear and many of the variables are not
+defined.
 
 In this section, we evaluated the effectiveness of two immunization
 strategies by comparing their impact on the spread of information in the
@@ -1296,5 +1372,59 @@ network centrality is more consistently effective** in containing the
 spread of information or contagion across a social network.
 
 ### 6) Comment on the relationship between the findings in steps 3 and 5 using the same type of centrality for the 1% in step 3 and 5% in step 5.
+
+Here we compare our 2 PageRank methods applied in Q3 and Q5B. To
+summarise, we did:
+
+-   In Q3 - apply a very high beta value (15%) above the critical value
+    to maximise our infection spread and used centrality measures to
+    select the 1% of infections using PageRank.
+
+-   In Q5 - we select 5% of the population using PageRank to essentially
+    treat them as *kind_people* who will not spread any rumours.
+
+To compare the outputs we first outline **differences in the methods:**
+
+-   Fewer initial infected nodes in Q5. Due to sequencing, we already
+    remove 5% of nodes, then apply the 1% infection (per the question),
+    we remove 10 nodes initially. While in Q3, we take our 1% sample
+    from the whole unaffected population, where we have 12 initial
+    infected nodes.
+
+-   Q3 intends to maximise spread by infecting the most connected nodes,
+    while Q5 intends to prevent spread by removing the most infected
+    nodes.
+
+-   Q3 specifies to use a high beta value (we select $\beta_c = 0.15$,
+    while Q5 specifies to use the critical beta value
+    ($\beta_c = 0.00535$). This means our infectivity is around 28 times
+    higher in Q3 compared to Q5.
+
+Overall, these 2 questions seek very different things but both highlight
+the importance of central nodes when consdiering the spread of rumours
+in the univeristy email system. These **central nodes could be
+considered the super-spreaders** at risk of creating a more rapid
+epidemic.
+
+-   If we protect the most important spreaders, we can completely kill
+    the spread (as seen in Q5(b) where as the super-spreaders are
+    removed, and so are all of their connections, we essentially close
+    off almost 20% of all potential pathways to spread information
+    (1,867 edges were removed when the super-spreader nodes are deleted)
+    despite only removing 5% of the total nodes.
+
+<!-- -->
+
+-   In Q3, because of the very high connectivity, we see that the
+    initially infecting the central nodes led to a more rapid peak in
+    the timeline and also a slightly more severe peak, when compared to
+    a rapid assignment.
+
+Combining the findings, we see that who is infected initially is highly
+predictive of whether information will spread or die out. The
+influential people in a social network have so much power, if they work
+together to spread a rumor over the university email, they will almost
+succeed. While if they choose to completely disengage and be kind
+people, the rumor will not survive! Let's hope they are nice people.
 
 ### 7) With the results of step 2, train a model that predicts that time to infection of a node using their degree, centrality, betweeness, page rank and any other predictors you see fit. Use that model to select the seed nodes as those with the smallest time to infection in step 3. Repeat step 5 with this knowledge.
