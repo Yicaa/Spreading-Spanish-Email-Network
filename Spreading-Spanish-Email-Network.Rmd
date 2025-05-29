@@ -948,7 +948,7 @@ df_results <- data.frame(
 ggplot(df_results, aes(x = strategy, y = infected, fill = strategy)) +
   geom_boxplot(alpha = 0.5, width = 0.5, outlier.shape = NA) +
   geom_jitter(width = 0.1, size = 2, alpha = 0.7) +  # Each dot is one simulation
-  labs(title = "Comparison of Final Infection Counts (beta=0.01)",
+  labs(title = "Comparison of Final Infection Counts (β = 0.01)",
        x = "Strategy",
        y = "Total number of infected nodes") +
   theme_minimal() +
@@ -1007,7 +1007,7 @@ ggplot(cumulative_all, aes(x = t, y = mean_inf, color = strategy, fill = strateg
   geom_vline(xintercept = 12, linetype = "dashed", color = "darkblue") +
   annotate("text", x = 4, y = 0, label = "Start quarantine (t=4)", angle = 90, vjust = -0.5,hjust=-1, color = "darkred", size = 3) +
   annotate("text", x = 12, y = 0, label = "End quarantine (t=12)", angle = 90, vjust = -0.5, hjust=-1, color = "darkblue", size = 3) +
-  labs(title = "Infection Spread Over Time (beta=0.01)",
+  labs(title = "Infection Spread Over Time (β = 0.01)",
        subtitle = "With vs Without Quarantine (20 simulations each)",
        x = "Time step (t)",
        y = "Cumulative number of infected nodes") +
@@ -1027,47 +1027,27 @@ actually higher with quarantine** (312 infected nodes on average) than
 without it (266), a difference of **-46 nodes**. This contrasts with the
 previous high-β case, which was comparable in the long run.
 
-[**\~\~\~ PLEASE CHECK ALL THE UPDATES ARE CLEAR... I think the second
-plot had the wrong beta value (wasn't at 0.01 so the plots have
-updated). Hopefully I haven't actually ruined it though, but the second
-plot now has much lower growth... I am not sure it looks correct to be
-honest...**]{.underline}
+This reversal suggests that, under low transmission rates, the current
+quarantine strategy does not effectively reduce the spread.
 
-[**\~\~\~ Careful with copying the AI interepretations too! It's very
-detailed and quite hard to interpret. I think simple and shorter is
-better (even if you get AI to summarise their own output it is easier
-for us to check ourselves!)**]{.underline}
+There are several possible reasons:
 
-This reversal suggests that under low-transmission conditions, the
-quarantine intervention—at least in the way it is currently implemented—
-is ineffective.
+-   Randomly quarantined nodes might not be important for transmission,
+    so the main spread continues;
 
-Possible explanations include:
+-   Letting quarantined people back in too early (at t = 12) may restart
+    the infection;
 
--   **Random quarantine may remove non-critical nodes**, leaving core
-    transmission paths unaffected;
+-   When β is low, small changes can have big effects due to randomness.
 
--   **Reintroducing susceptible nodes too early** (at t = 12) when the
-    infection has not been fully contained may cause renewed spread;
+Taken together, these results indicate that **random quarantine is not
+always a good solution**. In fact, at lower transmission levels, it
+could even make things worse.
 
--   **Stochastic effects are stronger at lower β**, meaning small
-    changes can lead to large outcome variations.
-
-Similarly, the cumulative infection curves show that the quarantine
-group **catches up and overtakes** the no-quarantine group after
-reintroduction of the susceptible nodes, despite an initial flattening
-effect.
-
-Taken together with our earlier findings, these results suggest that
-**randomly quarantining a portion of the population may not be an
-effective universal intervention**, and can even be detrimental under
-certain conditions. At lower transmission rates, a poorly timed or
-untargeted quarantine can lead to **worse overall outcomes**.
-
-Future strategies should explore **data-driven, targeted quarantine**
-approaches — such as removing high-centrality nodes or dynamically
-adjusting quarantine duration — to achieve more reliable suppression of
-spread across different epidemic scenarios.
+A better approach would be to design smarter quarantine strategies — for
+example, **targeting central nodes** or **adapting quarantine timing
+based on the situation** — to more consistently control the spread in
+different scenarios.
 
 ### 5) Suppose now that you can convince 5% of people in the network not to spread that information at all.
 
