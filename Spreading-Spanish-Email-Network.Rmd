@@ -1115,6 +1115,7 @@ the infection actually dies out by period 15 and the spread of
 information stops.
 
 ```{r}
+set.seed(12345)
 # targeted selection of most influential  5% randomly selected - essentially delete them, using our exiting pagerank_cent calculations
 num_seeds <- vcount(graph)*0.05
 kind_people_pager <- order(pagerank_cent, decreasing = TRUE)[1:num_seeds]
@@ -1171,56 +1172,22 @@ ggplot() +
   geom_line(data=realization_pager,aes(x=t,y=ninf,col="Vacc. Targeted"))
 ```
 
-[**\~\~\~\~ TO REVIEW... There is too much text here and seems to be all
-AI output... really need to simplify. But I can come
-back.**]{.underline} Blas was clear to avoid having obvious AI output
-and the text and code is very clear. The code in the workshop is much
-more simple, so it's very clear and many of the variables are not
-defined.
-
-In this section, we evaluated the effectiveness of two immunization
-strategies by comparing their impact on the spread of information in the
-network. In both scenarios, 5% of the nodes were made “immune” (i.e.,
-they did not participate in spreading the information), either through
-random selection or by targeting the most central nodes based on
-PageRank. We then simulated the SIR model using a 1% random selection of
-the remaining nodes as initial spreaders and observed the resulting
-infection trends.
-
-**According to our previous two plots**, surprisingly, t**he random
-immunization strategy outperformed the targeted PageRank-based
-strategy**. The random strategy resulted in near-zero propagation, with
-infections rarely exceeding a count of one or two individuals throughout
-the simulation. In contrast, the PageRank-targeted strategy led to a
-substantial outbreak, peaking at over 40 simultaneous infections before
-declining. This contradicts the common assumption that removing the most
-central nodes is always the most effective containment strategy.
-
-**Several factors may explain this outcome**. First, the PageRank nodes
-likely formed a densely interconnected core, and their removal may have
-left the rest of the network still sufficiently connected for diffusion
-to occur. Meanwhile, the randomly selected nodes were more evenly
-distributed across the network, inadvertently severing critical bridges
-between different communities and halting the spread. Additionally,
-while the targeted strategy removed significantly more edges (1,867 vs
-488), this did not translate into a better containment
-outcome—suggesting that where nodes are removed may be more important
-than how many edges are lost.
-
-These findings highlight the importance of considering the spatial
-distribution and structural role of nodes in designing immunization
-strategies. In this realization, the random strategy disrupted the
-network more effectively, despite its apparent lack of sophistication.
-
 However, further simulations are needed to assess whether this effect
 holds consistently across multiple realizations or was the result of
 stochastic variance. Haven considered this, **we will run a simulation
-of 20 times instead of comparing just a pair of random results to obtain
-statistically significance**.
+of 30 times instead of comparing just a pair of random results to obtain
+statistically significance**. (Here we increase slightly the number of
+simulations as we observed some unexpected variability in results.)
 
 ```{r}
 ### Step 5c: Compare both strategies through multiple simulations
 set.seed(1234)
+
+# Parameters
+beta_5c <- beta_c
+mu_5c <- 0.1
+runs_5c <- 30
+kind_n <- ceiling(0.05 * vcount(graph))
 
 # Create a new blank data frame
 results_5c <- data.frame(
@@ -1229,8 +1196,8 @@ results_5c <- data.frame(
   peak_time = numeric()
 )
 
-# ----- 5a: Random kind_people (20x) -----
-for (i in 1:20) {
+# ----- 5a: Random kind_people (30x) -----
+for (i in 1:30) {
   kind_people_random <- sample(1:vcount(graph), kind_n)
   graph_rand <- delete_vertices(graph, kind_people_random)
   
@@ -1254,8 +1221,8 @@ for (i in 1:20) {
   ))
 }
 
-# ----- 5b: PageRank kind_people (20x) -----
-for (i in 1:20) {
+# ----- 5b: PageRank kind_people (30x) -----
+for (i in 1:30) {
   graph_pager <- delete_vertices(graph, kind_people_pager)
   
   seed_n <- ceiling(0.01 * vcount(graph_pager))
@@ -1300,61 +1267,44 @@ print(summary_5c)
 ggplot(results_5c, aes(x = strategy, y = total_infected, fill = strategy)) +
   geom_boxplot() +
   geom_jitter(width = 0.1, size = 2, alpha = 0.7) +  # Each dot is one simulation
-  labs(title = "Total Infected (20 runs): Random vs PageRank Kind People",
+  labs(title = "Total Infected (30 runs): Random vs PageRank Kind People",
        y = "Total number of infected nodes") +
   theme_minimal()
 
 ggplot(results_5c, aes(x = strategy, y = peak_time, fill = strategy)) +
   geom_boxplot() +
   geom_jitter(width = 0.1, size = 2, alpha = 0.7) +  # Each dot is one simulation
-  labs(title = "Peak Time (20 runs): Random vs PageRank Kind People",
+  labs(title = "Peak Time (30 runs): Random vs PageRank Kind People",
        y = "Time step of peak") +
   theme_minimal()
 ```
 
-Based on the 20 repeated simulations conducted in Step 5c, we observe a
-reversal of the conclusion reached in the single-run analysis (Step 5b).
-While the earlier single realization suggested that the **random
-immunization strategy** was more effective—yielding significantly fewer
-infections—the repeated simulations tell a more nuanced story.
+Based on the results of 30 simulations, the **PageRank-targeted
+vaccination strategy** clearly outperforms the **random vaccination
+strategy** in reducing the spread of infection:
 
-We observed some interesting findings:
+-   On average, the **PageRank strategy resulted in 17.6 infected
+    nodes**, compared to **28.2 infected nodes** under the random
+    strategy.
 
--   The **PageRank-based strategy** resulted in a lower average number
-    of infected nodes (mean = **774.45**, sd = 17.58), compared to the
-    **random strategy** (mean = **842.75**, sd = 14.42).
+-   The **standard deviation is also lower** under PageRank (5.2 vs
+    13.2), suggesting **more stable and consistent results**.
 
--   Moreover, the **peak time** of infections under the PageRank
-    strategy was **delayed** (mean = **15.75**) compared to the random
-    case (mean = **9.4**), suggesting that the outbreak unfolded more
-    slowly when high-centrality nodes were immunized.
+-   The **peak time was zero** in both cases, meaning infections mostly
+    happened early and then quickly subsided — but PageRank consistently
+    kept the total lower.
 
--   Both differences—total infections and peak delay—are statistically
-    meaningful, as the **standard deviations are small**, and the
-    distributions are clearly separated in the boxplots.
+These findings confirm that **removing highly central nodes (according
+to PageRank)** is an effective containment method. These nodes likely
+act as major bridges or hubs in the network, so vaccinating them breaks
+key transmission paths. In contrast, the random strategy may
+occasionally remove critical nodes, but also wastes many “vaccinations”
+on peripheral nodes, leading to less predictable and less effective
+results.
 
-This result aligns with theoretical expectations: **targeting the most
-central nodes for immunization is generally more effective** at limiting
-epidemic spread, since those nodes are key hubs for transmission. The
-earlier contradictory result from Step 5b can be attributed to
-**stochastic variability** in a single realization, especially under low
-β values (we used β = 0.05). In that single run, it's possible the
-randomly removed nodes happened to disrupt crucial network bridges or
-coincidentally blocked early transmission routes, creating an atypical
-suppression of spread.
-
-However, after running 20 simulations for each strategy, the **aggregate
-trend confirms that targeted intervention performs better on average**.
-The PageRank strategy not only **reduces the overall size of the
-outbreak**, but also **delays its peak**, which is an important public
-health benefit—offering more time to react or intervene.
-
-These findings highlight the **importance of repeated simulations** to
-capture reliable statistical patterns and avoid misleading conclusions
-based on single runs. While randomness may occasionally outperform
-structured strategies by chance, **targeted immunization based on
-network centrality is more consistently effective** in containing the
-spread of information or contagion across a social network.
+In short, when it comes to minimizing spread, **targeted immunization
+based on network centrality is a better strategy than random
+selection**.
 
 ### 6) Comment on the relationship between the findings in steps 3 and 5 using the same type of centrality for the 1% in step 3 and 5% in step 5.
 
