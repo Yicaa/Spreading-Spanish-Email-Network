@@ -32,6 +32,9 @@ library(ggthemes)
 library(here)
 library(caret)
 library(purrr)
+library(DataExplorer)
+library(GGally)
+library(glmnet)
 ```
 
 ## Read the data
@@ -1343,10 +1346,9 @@ To compare the outputs we first outline **differences in the methods:**
     higher in Q3 compared to Q5.
 
 Overall, these 2 questions seek very different things but both highlight
-the importance of central nodes when considering the spread of rumours
-in the univeristy email system. These **central nodes could be
-considered the super-spreaders** at risk of creating a more rapid
-epidemic.
+the importance of central nodes when considering the spread of rumors in
+the university email system. These **central nodes could be considered
+the super-spreaders** at risk of creating a more rapid epidemic.
 
 -   If we protect the most important spreaders, we can completely kill
     the spread (as seen in Q5(b) where as the super-spreaders are
@@ -1372,3 +1374,292 @@ people, the rumor will not survive! Let's hope they are nice people.
 <br><br>
 
 ### 7) With the results of step 2, train a model that predicts that time to infection of a node using their degree, centrality, betweeness, page rank and any other predictors you see fit. Use that model to select the seed nodes as those with the smallest time to infection in step 3. Repeat step 5 with this knowledge.
+
+#### 7.1. (Based on step 2) Predictive model
+
+Firstly, we extract the results we obtained in the step 2 as our data
+for training.
+
+```{r}
+infection_times <- results  |> 
+  filter(type=="Random") |> #we only use random infection data, as other infection methods were not used in the step 2 but other steps
+  group_by(inf)  |> 
+  summarise(first_infected = min(t))  |> 
+  rename(node = inf)
+```
+
+Then, we calculate the network metrics (degree, centrality, etc.) as
+inputs for modelling:
+
+```{r}
+metrics_df <- data.frame(
+  node = as.numeric(V(graph)),
+  degree = degree(graph),
+  betweenness = betweenness(graph, normalized = TRUE),
+  closeness = closeness(graph, normalized = TRUE),
+  pagerank = page_rank(graph)$vector,
+  eigen_centrality = eigen_centrality(graph)$vector,
+  clustering = transitivity(graph, type="local", isolates="zero")
+)
+```
+
+We join both data frames to have our training and test data:
+
+```{r}
+data_7 <- inner_join(infection_times, metrics_df, by = "node")
+set.seed(123)
+train_index <- sample(1:nrow(data_7), 0.7 * nrow(data_7))
+train_data <- data_7[train_index, ]
+test_data <- data_7[-train_index, ]
+```
+
+Before creating the predictive models, we would like to discover the
+distribution and correlation among these variables:
+
+```{r}
+plot_density(train_data, nrow=5, ncol=5)
+plot_scatterplot(train_data, by = "first_infected", nrow=4, ncol=5)
+ggcorr(train_data)
+```
+
+We observed that many network metrics are **strongly correlated** to
+each other (like degree and page rank), which could negatively affect
+the effectiveness of the model. We will run a **lasso model** to do a
+feature selection firstly, and take it as a baseline model.
+
+On the other hand, it's important to notice that the target variable
+`infection_times` is always positive integer numbers, and the relation
+with `infection_times` and some network metrics does not seem 100%
+linear. Therefore, after creating the baseline linear model with lasso,
+we will use the selected features to create a **glm poisson model**.
+
+We first do a lasso model for feature selection:
+
+```{r}
+# create X and y
+X_train <- model.matrix(first_infected ~ degree + betweenness + closeness + pagerank +
+                        eigen_centrality + clustering, data = train_data)[, -1]
+y_train <- train_data$first_infected
+
+# Lasso model with cross-validation
+lasso_model <- cv.glmnet(X_train, y_train, alpha = 1)
+
+# check the best lambda
+lasso_model$lambda.min
+
+# check the coefficient
+coef(lasso_model, s = "lambda.min")
+```
+
+We see the selected features are `closeness`, `pagerank`,
+`eigen_centrality` and `clustering`. Considering this information, now
+we build up a glm poissson model:
+
+```{r}
+poisson_model <- glm(first_infected ~ closeness + pagerank + eigen_centrality + clustering,
+                     data = train_data,
+                     family = "poisson")
+
+summary(poisson_model)
+```
+
+Now we test the predictive power of both models:
+
+```{r}
+# Lasso prediction
+X_test <- model.matrix(first_infected ~ degree + betweenness + closeness + pagerank +
+                       eigen_centrality + clustering, data = test_data)[, -1]
+lasso_preds <- predict(lasso_model, newx = X_test, s = "lambda.min")
+
+# Poisson prediction
+poisson_preds <- predict(poisson_model, newdata = test_data, type = "response")
+
+# MSE comparison
+mean((test_data$first_infected - lasso_preds)^2)
+mean((test_data$first_infected - poisson_preds)^2)
+```
+
+The MSE of the poisson model is smaller than the lasso model, then we
+will keep the results from the poisson model and save them into the
+metrics_df. <br>
+
+#### 7.2. (Based on step 3) Find the predicted 1% earliest infected nodes
+
+Then, as in the step 3, we again try to find a better set of 1% of seeds
+in the network so we get more infected people than the random case.
+
+```{r}
+metrics_df$predicted_time <- predict(poisson_model, newdata = metrics_df, type = "response")
+num_seeds <- ceiling(0.01 * vcount(graph)) #set the percentage of 1%
+best_seed_nodes <- metrics_df %>%
+  arrange(predicted_time) %>%
+  slice(1:num_seeds) %>% #select the nodes with earlier predicted infection time
+  pull(node)
+head(best_seed_nodes)
+```
+
+#### 7.3. (Based on step 5) Compare the results of random or targeted vaccination
+
+Then we replicate the step 5 but with the same seed according to the
+poisson model (targeted seeding), we also do 30 times of simulation for
+both random and pagerank vaccination.
+
+```{r}
+set.seed(1234)
+
+# Parameters
+beta_7 <- beta_c
+mu_7 <- 0.1
+kind_n <- ceiling(0.05 * vcount(graph))
+runs_7 <- 30
+
+# Create result holder
+results_7 <- data.frame(
+  strategy = character(),
+  total_infected = numeric(),
+  peak_time = numeric()
+)
+
+# --------- 7a: Random vaccination, fixed Poisson seeds ----------
+for (i in 1:runs_7) {
+  kind_people_random <- sample(1:vcount(graph), kind_n)
+  graph_rand_7 <- delete_vertices(graph, kind_people_random)
+  
+  valid_seeds_7_rand <- best_seed_nodes[best_seed_nodes %in% as.numeric(V(graph_rand_7))]
+  
+  sim <- sim_sir(graph_rand_7, beta = beta_7, mu = mu_7, seeds = valid_seeds_7_rand)
+  
+  total_inf <- length(unique(sim$inf))
+  peak <- sim %>%
+    group_by(t) %>%
+    summarise(ninf = n()) %>%
+    filter(ninf == max(ninf)) %>%
+    pull(t) %>%
+    min()
+  
+  results_7 <- rbind(results_7, data.frame(
+    strategy = "Random_vaccination",
+    total_infected = total_inf,
+    peak_time = peak
+  ))
+}
+
+# --------- 7b: PageRank vaccination, fixed Poisson seeds ----------
+for (i in 1:runs_7) {
+  graph_pager_7 <- delete_vertices(graph, kind_people_pager)
+  
+  valid_seeds_7_pager <- best_seed_nodes[best_seed_nodes %in% as.numeric(V(graph_pager_7))]
+  
+  sim <- sim_sir(graph_pager_7, beta = beta_7, mu = mu_7, seeds = valid_seeds_7_pager)
+  
+  total_inf <- length(unique(sim$inf))
+  peak <- sim %>%
+    group_by(t) %>%
+    summarise(ninf = n()) %>%
+    filter(ninf == max(ninf)) %>%
+    pull(t) %>%
+    min()
+  
+  results_7 <- rbind(results_7, data.frame(
+    strategy = "PageRank_vaccination",
+    total_infected = total_inf,
+    peak_time = peak
+  ))
+}
+
+```
+
+```{r}
+# Summary
+summary_7 <- results_7 %>%
+  group_by(strategy) %>%
+  summarise(
+    avg_infected = mean(total_infected),
+    sd_infected = sd(total_infected),
+    avg_peak = mean(peak_time),
+    sd_peak = sd(peak_time)
+  )
+
+print(summary_7)
+```
+
+```{r}
+# Visualisations
+ggplot(results_7, aes(x = strategy, y = total_infected, fill = strategy)) +
+  geom_boxplot() +
+  geom_jitter(width = 0.1, alpha = 0.6) +
+  labs(title = "Total Infected (30 runs): Poisson-seeds with different vaccination strategies")
+
+ggplot(results_7, aes(x = strategy, y = peak_time, fill = strategy)) +
+  geom_boxplot() +
+  geom_jitter(width = 0.1, alpha = 0.6) +
+  labs(title = "Peak Time (30 runs): Poisson-seeds with different vaccination strategies")
+```
+
+Here, **the results seem quite similar to the previous step 5**: as we
+set the beta at the critical beta, **both random and targeted (by
+pagerank) vaccination have the peak time at t=0**. And regarding the
+**total infected number**, it is still significantly **lower** under
+targeted vaccination (**27.46667**) than under random vaccination
+(**53.80000**), where the targeted vaccination manages to control the
+standard deviation as well (**10.33819 \< 26.63469**).
+
+However, **the total infected number here (targeted seeding) is much
+higher than in the step 5 (random seeding) for both vaccination
+strategies**, targeted/pagerank (**27.46667\>17.60000**) and random
+(**53.80000\>28.16667**), while the standard deviation here are higher,
+too.
+
+#### 7.4. Conclusion
+
+If we combine the insights from step 5 and step 7, we can conclude that,
+on the one hand, no matter whether the vaccination strategy is taken
+(targeted or random), the initial seed was more effective when it's
+targeted seeding than when it's random seeding. On the other hand, no
+matter whether the initial seed was random or targeted, the targeted
+vaccination is always a more effective containment method.
+
+The last conclusion is compatible with the mathematical proofs we
+learned from class. The targeted vaccination will naturally delete the
+high degree nodes, which reduces significantly the
+${\langle k^2 \rangle}$. This effect can reflect in:
+
+-   $$
+    R_0 = \frac{\beta}{\mu} \cdot \frac{\langle k^2 \rangle}{\langle k \rangle}
+    $$with lower ${\langle k^2 \rangle}$, the $R_0$ becomes reduced,
+    meaning lower probability of spreading;
+
+-   And $$
+    g_c \approx 1 - \frac{\mu \langle k \rangle_{k \leq k_M}}{\beta \langle k^2 \rangle_{k \leq k_M}}
+    $$ with lower${\langle k^2 \rangle}$, the critical vaccination
+    threshold, $g_c$ , becomes reduced, meaning the lower vaccination
+    coverage is required to stop the spread.
+
+## Final conclusions
+
+Throughout this project, we explored how rumors spread in a real-life
+university email network using the SIR model. We tried out different
+strategies—both for picking who starts the rumor and who we “vaccinate”
+(i.e., prevent from spreading it)—and found some interesting results:
+
+First, we saw in action the **epidemic threshold** formula from class:
+$$ \beta_c = \mu \frac{\langle k \rangle}{\langle k^2 \rangle}$$ When
+the infection rate β goes above this value, the rumor spreads like
+wildfire. Below it, nothing much happens. It was great to see this
+theory come to life in our simulation results.
+
+When it comes to **who starts the spread**, using central nodes (like
+those with high PageRank or degree) clearly makes the rumor spread
+faster and more widely than picking random people. That matched what we
+expected from network theory.
+
+For **vaccination**, targeting the most central people again made a huge
+difference—it stopped the spread much more effectively than random
+vaccination. The idea that removing hubs slows down the spread really
+worked here.
+
+In short, this project helped us test a lot of the mathematical concepts
+from class using real data and real simulations. It was cool to see how
+theory translates into actual strategies that work—and to see just how
+much network structure matters when it comes to spreading anything,
+whether it’s gossip, viruses, or ideas.
