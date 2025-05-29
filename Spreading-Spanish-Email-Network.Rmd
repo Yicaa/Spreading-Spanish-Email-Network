@@ -308,7 +308,8 @@ The broad process is:
     infections to the table in the period they became infected.
 
 All nodes start as value 0 as they're uninfected. We then apply
-infection to the randomly selected seeds and
+infection to the randomly selected seeds and create the function for the
+SIR model:
 
 ```{r}
 # Set recovery rate μ
@@ -661,6 +662,8 @@ period 40. At this stage, the random assignment is just starting to find
 it's peak values. Similarly, the infections drop off at the start for
 our random assignment when the selected samples immediately peak due to
 the importance of the infected nodes initially infected.
+
+<br><br>
 
 ### 4) Using the same β, design a “quarantine strategy”: at time step t=3 or 4, quarantine of 20% the susceptible population. You can model quarantine by temporally removing these nodes. Release the quarantined nodes 8 time steps later, making them susceptible again. Measure the difference with respect to no quarantine.
 
@@ -1049,6 +1052,8 @@ example, **targeting central nodes** or **adapting quarantine timing
 based on the situation** — to more consistently control the spread in
 different scenarios.
 
+<br><br>
+
 ### 5) Suppose now that you can convince 5% of people in the network not to spread that information at all.
 
 If we have 5% who will not spread information at all, they are
@@ -1176,8 +1181,8 @@ However, further simulations are needed to assess whether this effect
 holds consistently across multiple realizations or was the result of
 stochastic variance. Haven considered this, **we will run a simulation
 of 30 times instead of comparing just a pair of random results to obtain
-statistically significance**. (Here we increase slightly the number of
-simulations as we observed some unexpected variability in results.)
+statistically significance**. (Here, we slightly increase the number of
+simulations, as we observed some unexpected variability in the results.)
 
 ```{r}
 ### Step 5c: Compare both strategies through multiple simulations
@@ -1306,6 +1311,8 @@ In short, when it comes to minimizing spread, **targeted immunization
 based on network centrality is a better strategy than random
 selection**.
 
+<br><br>
+
 ### 6) Comment on the relationship between the findings in steps 3 and 5 using the same type of centrality for the 1% in step 3 and 5% in step 5.
 
 Here we compare our 2 PageRank methods applied in Q3 and Q5B. To
@@ -1336,7 +1343,7 @@ To compare the outputs we first outline **differences in the methods:**
     higher in Q3 compared to Q5.
 
 Overall, these 2 questions seek very different things but both highlight
-the importance of central nodes when consdiering the spread of rumours
+the importance of central nodes when considering the spread of rumours
 in the univeristy email system. These **central nodes could be
 considered the super-spreaders** at risk of creating a more rapid
 epidemic.
@@ -1361,5 +1368,7 @@ influential people in a social network have so much power, if they work
 together to spread a rumor over the university email, they will almost
 succeed. While if they choose to completely disengage and be kind
 people, the rumor will not survive! Let's hope they are nice people.
+
+<br><br>
 
 ### 7) With the results of step 2, train a model that predicts that time to infection of a node using their degree, centrality, betweeness, page rank and any other predictors you see fit. Use that model to select the seed nodes as those with the smallest time to infection in step 3. Repeat step 5 with this knowledge.
