@@ -1180,10 +1180,15 @@ targeted is much more effective and essentially flattened the curve.
 Growth never got exponential.
 
 ```{r}
+realization<- results |> 
+  group_by(type, t) |> 
+  summarise(sum_inf = n(), .groups = 'drop') |> 
+  filter(type=="Random")
+
 ggplot() + 
-  geom_line(data=realization,aes(x=t,y=ninf,col="No Vaccination")) +
+  geom_line(data=realization,aes(x=t,y=sum_inf,col="No Vaccination")) +
   geom_line(data=realization_random,aes(x=t,y=ninf,col="Vacc. Random"))+
-  geom_line(data=realization_targeted,aes(x=t,y=ninf,col="Vacc. Targeted"))
+  geom_line(data=realization_pager,aes(x=t,y=ninf,col="Vacc. Targeted"))
 ```
 
 [**\~\~\~\~ TO REVIEW... There is too much text here and seems to be all
