@@ -35,6 +35,13 @@ library(purrr)
 library(DataExplorer)
 library(GGally)
 library(glmnet)
+#library(mice) # ended up not using imputation
+library(conflicted)
+
+#avoid conflicts in packages
+conflicted::conflict_prefer("filter", "dplyr")
+conflicted::conflict_prefer("select", "dplyr")
+conflicted::conflict_prefer("simplify", "igraph")
 ```
 
 ## Read the data
@@ -55,12 +62,11 @@ Source: [Netzschleuder](https://networks.skewed.de/net/uni_email).
 ### Interpreting the email dataset as a SIR model
 
 To help interpret the findings within the context of the university
-email network, we explain the following settings can specify the
-following settings. In the setting of a university email network We can
-consider the epidemic as the spread of rumors between individuals. For
-example, it could be some sort of negative campaign about a Professor to
-ruin their reputation (but never a Social Networks teacher obviously -
-don't worry Blas, you're safe :D).
+email network, we explain the following settings. We can consider the
+epidemic as the spread of rumors between individuals. For example, it
+could be some sort of negative campaign about a Professor to ruin their
+reputation (but never a Social Networks teacher obviously - don't worry
+Blas, you're safe :D).
 
 We could the actors in the model:
 
@@ -72,27 +78,8 @@ We could the actors in the model:
 
 -   Recovered (R): Individuals who have already received the bad email
     and were infected, but now realize that it's just a rumor and are
-    now not at risk of believing the email if they see it again AND will
+    NOT SUSCEPTIBLE of believing the email if they see it again AND will
     not send it to others if they see it. They are immune to the rumor.
-
-We could consider the email as a SI model if it's
-
-### Understanding this model stype:
-
-In terms of model outcome, we could consider the outcomes as:
-
-Susceptible-Infected (SI): Everyone who received the virus is infected
-and loses control of their computer and the virus can be sent on to all
-of their connections. (This is the least difficult to justify in this
-setting)
-
-Susceptible-Infected-Recovered (SIR): Everyone who received the email
-virus has installed proper seucity software and is not as risk of
-receiving anymore malware.
-
-Susceptible-Infected-Susceptible (SIS): People have IT make a temporary
-fix to remove the email virus, but it is not a long term solution. The
-computer does not have immunity.
 
 #### Nodes and links
 
@@ -124,9 +111,8 @@ To understand the graph, we can plot the degree distribution to check
 whether we have the expected power-law distribution or another type.
 This will help to interpret the findings later when we remove links.
 
-First, we check for any loops, these would be emails sent to self. And
-if so, we can simplify the graph to remove these (and also any eventual
-multiple edge).
+First, we simplify to remove 1 recursive loop. And count edges and
+nodes.
 
 ```{r}
 paste0("The number of recursive (self-directed) emails in the network is: ", 
@@ -135,18 +121,16 @@ paste0("The number of recursive (self-directed) emails in the network is: ",
 # we see that one exists, so we simplify the graph to remove it. 
 graph <- simplify(graph)
 
-# check our graph is setup properly
-is_igraph(graph)
-```
-
-Next, calculate basic descriptive statistics of the plot:
-
-```{r}
 paste0("There are ", vcount(graph), " nodes and ", ecount(graph), " edges in our Spanish email network")
 
 # check if our graph is fully connected
 is_connected(graph)
 
+```
+
+Next, calculate basic descriptive statistics of the plot:
+
+```{r}
 #degree
 degree_all <- degree(graph, mode="all")
 degree_out <- degree(graph, mode="out")
@@ -158,11 +142,9 @@ paste0("The most connected node is number ", which.max(degree(graph))[1], " whic
 ```
 
 For the purposes of this homework, we are not factoring in this
-directional property of the graph. We are considering that the emails
-are indicating a social relationship between the two nodes (sender and
-receiver) and it is irrelevant who sent the email. This means the
-average interactions for each individual node is 19.24 (which would
-represent email interactions with 19.24 different people on average).
+directional property of the graph. In fact, we will remove the
+directionality later to create a social network where teh virus can
+spread both ways.
 
 Now check the degree distribution;
 
@@ -279,7 +261,7 @@ even a small infection rate β would allow the information to reach a
 significant portion of the network.
 
 This low threshold is a direct consequence of the high variance in
-degree:\
+degree:
 
 ⟨k⟩ = 9.62 but ⟨k²⟩ = 179.82, which suggests the presence of a few nodes
 with **very high degree** (i.e., “super spreaders”).
@@ -354,8 +336,8 @@ sim_sir <- function(g, beta, mu, seeds){
 ```
 
 Now we run the simulations over different values. Since our critical
-threshold was 0.00535, we select 2 values smaller than the threshold and
-2 above.
+threshold was 0.00535, we select 3 values smaller than the threshold and
+3 above.
 
 ```{r}
 
@@ -412,13 +394,12 @@ limited or failed spread. However, just beyond this value, there is a
 **nonlinear transition** typical of epidemic processes in complex
 networks.
 
-Furthermore, the plot shows a **monotonic increase** in the average
-infection size as β increases, aligning with theoretical expectations
-from the SIR model — higher infection rates naturally result in more
-widespread diffusion. Notably, the **uncertainty (standard deviation)**
-of infection size is highest around β = 0.01, suggesting that outcomes
-near the threshold are highly sensitive to stochastic factors such as
-seed selection and local network topology.
+The number of infections was most variable around β = 0.01. This
+indicates that close to this tipping point, small, random things – like
+exactly where the infection starts or how people are connected to each
+other – can make a huge difference in how many people end up getting
+infected. [This is an important consideration through this analysis -
+which often uses 1% starting infection rates.]{.underline}
 
 Overall, the plot illustrates a classic **epidemic threshold
 phenomenon**. Once β exceeds the critical value, even a small increase
@@ -437,14 +418,14 @@ num_seeds <- ceiling(0.01 * vcount(graph))
 seeds <- sample(1:vcount(graph), num_seeds)
 
 # plot the outputs over time
-results <- map_dfr(seq(0,0.1,0.005), # beta range
+results_q2 <- map_dfr(seq(0,0.1,0.005), # beta range
         \(beta){
           realization <- sim_sir(graph,beta,mu,seeds) # make a realization for each beta
         data.frame(beta, 
                    ninf=nrow(realization)) # create dataframe column for beta and for number infected
         })
 
-results %>% ggplot(aes(x=beta,y=ninf))+ 
+results_q2 %>% ggplot(aes(x=beta,y=ninf))+ 
   geom_point()+
   geom_line(color="red", alpha=0.5)+
   geom_vline(xintercept = beta_c,linetype=2)+
@@ -573,7 +554,7 @@ random_sim$type <- "Random"
 degree_sim$type <- "Degree centrality"
 pagerank_sim$type <- "PageRank"
 
-results <- rbind(random_sim, degree_sim, pagerank_sim)
+results_q3 <- rbind(random_sim, degree_sim, pagerank_sim)
 table(results$type)
 ```
 
@@ -626,6 +607,10 @@ To illustrate whether the peaks differ at other levels, we quickly
 create a model with the beta infection rate as 3x the critical beta
 value, (which would be equal to just over 1.5% and almost 10 times less
 infectious than the above plot:
+
+NOTE: We have reran this with the lower infection rate (3x critical
+threshold) as we weren't sure if the 15% infection rate we selected was
+too extreme to see any really useful results.
 
 ```{r}
 ## comapring with new more moderate (but still high relative to critical threshold) beta value
@@ -751,7 +736,7 @@ paste0("With quarantine, avg infected = ", round(mean_q),
 
 ```
 
-**Long-run outcomes with high beta value.**
+**Long-run outcomes with high beta value:**
 
 We surprisingly observed that after running 20 simulations for each
 strategy, the quarantine scenario resulted in almost equivalent total
@@ -804,7 +789,7 @@ intervention at high infection rates (β = 0.15)**. Future strategies may
 benefit from more targeted approaches, such as quarantining
 high-centrality nodes.
 
-**Short-term quarantine outcomes with high beta value**
+**Short-term quarantine outcomes with high beta value:**
 
 Apart from the final result, does the quarantine policy work throughout
 the quarantine? If it can slow the spread, we can at least show the
@@ -838,6 +823,7 @@ interval in each time period for both policies, and visualize the
 results.
 
 ```{r}
+# summarise the findings to long form for plotting both with/without over time
 cumulative_all <- all_runs %>%
   group_by(strategy, run, t) %>%
   summarise(new_inf = n(), .groups = "drop") %>%
@@ -853,6 +839,7 @@ cumulative_all <- all_runs %>%
     .groups = "drop"
   )
 
+# and actually plot them
 ggplot(cumulative_all, aes(x = t, y = mean_inf, color = strategy, fill = strategy)) +
   geom_line(linewidth = 0.4) +
   geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper), alpha = 0.3, color = NA) +
@@ -1024,17 +1011,11 @@ ggplot(cumulative_all, aes(x = t, y = mean_inf, color = strategy, fill = strateg
 ```
 
 While our earlier simulations with a high infection rate (β = 0.15)
-showed **minimal differences between the quarantine and no-quarantine
-scenarios**, the results under a **lower infection rate (β = 0.01)**
-paint a very different picture.
-
-Surprisingly, we observed that the **average number of infections was
-actually higher with quarantine** (312 infected nodes on average) than
-without it (266), a difference of **-46 nodes**. This contrasts with the
-previous high-β case, which was comparable in the long run.
-
-This reversal suggests that, under low transmission rates, the current
-quarantine strategy does not effectively reduce the spread.
+showed differences in infection in the quarantine period, there are
+**minimal differences between the quarantine and no-quarantine
+scenarios** **under the lower infection rate (β = 0.01)**. Suggesting
+that the current quarantine strategy does not effectively reduce
+spreading at low transmission rates.
 
 There are several possible reasons:
 
@@ -1047,8 +1028,7 @@ There are several possible reasons:
 -   When β is low, small changes can have big effects due to randomness.
 
 Taken together, these results indicate that **random quarantine is not
-always a good solution**. In fact, at lower transmission levels, it
-could even make things worse.
+always a good solution**.
 
 A better approach would be to design smarter quarantine strategies — for
 example, **targeting central nodes** or **adapting quarantine timing
@@ -1071,9 +1051,8 @@ As these people refuse to spread rumours, we call them *kind_people*.
 #### a) Choose those 5% randomly in the network. Simulate the SIR model above βc using 1% of the remaining nodes as seeds. Choose those seeds randomly.
 
 First we set our random 5% of nodes to make immune. These essentially
-are deleted, so we remove them from the model.
-
-We set our infectious rate to 5% as well (beta=0.05)
+are deleted, so we remove them from the model. We calculate these models
+with the critical threshold value (βc).
 
 ```{r}
 set.seed(1234)
@@ -1158,15 +1137,15 @@ realization_pager |>
 
 #### c) Measure the difference between both cases as you did in step 3.
 
-Using the code from the slides, we plot the 2 trends to compare the
-outputs over time initially.
+We plot the 2 trends to compare the outputs over time initially. We also
+include the baseline case of infection for comparison. We see that under
+both these 5% kind people situations, growth never got exponential and
+it reduced infections compared to the baseline.
 
-Let's visualize the evolution together with the realization with no
-vaccination we got earlier.
-
-We see that Random vaccination is better than no vaccination. But
-targeted is much more effective and essentially flattened the curve.
-Growth never got exponential.
+We see that Random vaccination (i.e. selection of kind people), is
+better than no vaccination (our baseline 1% random infection case). But
+targeted approach (selecting the most connnected people as kind) is much
+more effective and flattened the curve in period t=6.
 
 ```{r}
 realization<- results |> 
@@ -1188,23 +1167,22 @@ statistically significance**. (Here, we slightly increase the number of
 simulations, as we observed some unexpected variability in the results.)
 
 ```{r}
-### Step 5c: Compare both strategies through multiple simulations
 set.seed(1234)
 
-# Parameters
+# set parameters for each run
 beta_5c <- beta_c
 mu_5c <- 0.1
 runs_5c <- 30
 kind_n <- ceiling(0.05 * vcount(graph))
 
-# Create a new blank data frame
+#setup blank df
 results_5c <- data.frame(
   strategy = character(),
   total_infected = numeric(),
   peak_time = numeric()
 )
 
-# ----- 5a: Random kind_people (30x) -----
+# run the random model 30 sims
 for (i in 1:30) {
   kind_people_random <- sample(1:vcount(graph), kind_n)
   graph_rand <- delete_vertices(graph, kind_people_random)
@@ -1229,7 +1207,7 @@ for (i in 1:30) {
   ))
 }
 
-# ----- 5b: PageRank kind_people (30x) -----
+# run the pagerank 30 sims
 for (i in 1:30) {
   graph_pager <- delete_vertices(graph, kind_people_pager)
   
@@ -1256,22 +1234,20 @@ for (i in 1:30) {
 ```
 
 ```{r}
-## ----- Combine and compare -----
-
+# combine the results and print summary 
 summary_5c <- results_5c %>%
   group_by(strategy) %>%
   summarise(
     avg_infected = mean(total_infected),
     sd_infected = sd(total_infected),
-    avg_peak = mean(peak_time),
-    sd_peak = sd(peak_time)
+    max_peak = max(total_infected),
+    peak_time = min(peak_time)
   )
 
 print(summary_5c)
 
 
-## ----- Visualisation -----
-
+##plot the total infections over each runs
 ggplot(results_5c, aes(x = strategy, y = total_infected, fill = strategy)) +
   geom_boxplot() +
   geom_jitter(width = 0.1, size = 2, alpha = 0.7) +  # Each dot is one simulation
@@ -1279,12 +1255,6 @@ ggplot(results_5c, aes(x = strategy, y = total_infected, fill = strategy)) +
        y = "Total number of infected nodes") +
   theme_minimal()
 
-ggplot(results_5c, aes(x = strategy, y = peak_time, fill = strategy)) +
-  geom_boxplot() +
-  geom_jitter(width = 0.1, size = 2, alpha = 0.7) +  # Each dot is one simulation
-  labs(title = "Peak Time (30 runs): Random vs PageRank Kind People",
-       y = "Time step of peak") +
-  theme_minimal()
 ```
 
 Based on the results of 30 simulations, the **PageRank-targeted
@@ -1293,22 +1263,26 @@ strategy** in reducing the spread of infection:
 
 -   On average, the **PageRank strategy resulted in 17.6 infected
     nodes**, compared to **28.2 infected nodes** under the random
-    strategy.
+    strategy. The maximum total infections was also higher under the
+    random strategy (58 vs 39 for PageRank).
 
 -   The **standard deviation is also lower** under PageRank (5.2 vs
     13.2), suggesting **more stable and consistent results**.
 
 -   The **peak time was zero** in both cases, meaning infections mostly
     happened early and then quickly subsided — but PageRank consistently
-    kept the total lower.
+    kept the total lower. This is consistent with what we saw in the
+    individual runs above. The plots show that the infection rate dies
+    and no epidemics occur under these settings. These are not plotted
+    again as the infection peak is zero in both instances, as seen in
+    the plots in section 5a and 5b, plus the first plot in 5c.
 
 These findings confirm that **removing highly central nodes (according
-to PageRank)** is an effective containment method. These nodes likely
-act as major bridges or hubs in the network, so vaccinating them breaks
-key transmission paths. In contrast, the random strategy may
-occasionally remove critical nodes, but also wastes many “vaccinations”
-on peripheral nodes, leading to less predictable and less effective
-results.
+to PageRank)** is an effective containment method. Vaccinating these
+central nodes breaks key transmission paths. In contrast, the random
+strategy may occasionally remove critical nodes, but also wastes many
+“vaccinations” on peripheral nodes, leading to less predictable and less
+effective results.
 
 In short, when it comes to minimizing spread, **targeted immunization
 based on network centrality is a better strategy than random
@@ -1378,15 +1352,39 @@ people, the rumor will not survive! Let's hope they are nice people.
 #### 7.1. (Based on step 2) Predictive model
 
 Firstly, we extract the results we obtained in the step 2 as our data
-for training.
+for training. For clean results, we will run the average time to
+infection for each node over 20 runs. A challenge here is that some
+nodes may not get infected.
 
 ```{r}
-infection_times <- results  |> 
-  filter(type=="Random") |> #we only use random infection data, as other infection methods were not used in the step 2 but other steps
-  group_by(inf)  |> 
-  summarise(first_infected = min(t))  |> 
-  rename(node = inf)
+# recreate the Q2 output to get the infection period for each node. This will become our target variable. Run a model to average the infection period over 10 models. 
+set.seed(1234)
+
+# sim 20 times for more robust results
+all_sims <- map_dfr(1:20, ~sim_sir(graph, beta=0.01, mu=0.1, 
+                                   seeds = sample(1:vcount(graph), num_seeds)))
+
+# Calculate average infection for each node
+avg_inf_time <- all_sims |> 
+  group_by(inf) |> 
+  summarise(avg_inf_time = mean(t)) |> 
+  rename(node_num = inf)
+  
+avg_inf_time
+
+# check for uninefected nodes in any run. 
+paste0("We have ", length(avg_inf_time$node_num), " nodes infected, meaning that there are ", vcount(graph) - length(avg_inf_time$node_num), " nodes that were not infected at any stage in the 20 runs.")
+
+# infection_times <- results  |>
+#   filter(type=="Random") |> #we only use random infection data, as other infection methods were not used in the step 2 but other steps
+#   group_by(inf)  |>
+#   summarise(first_infected = min(t))  |>
+#   rename(node = inf)
 ```
+
+We see that there are 103 missing nodes, we will create centrality
+metrics then impute the missing values to have a complete dataset based
+on known structures and centrality.
 
 Then, we calculate the network metrics (degree, centrality, etc.) as
 inputs for modelling:
@@ -1403,10 +1401,37 @@ metrics_df <- data.frame(
 )
 ```
 
-We join both data frames to have our training and test data:
+We join both data frames, then check imputation of missing values with
+mice. Unfortunately, because the nodes are lowly connected, they are not
+included in the model as the imputation is ineffective, many become 0
+values for average infection time which is not realistic and caused
+problems modelling. For this reason, we continue by removing the 103
+uninfected nodes after the 20 runs above.
 
 ```{r}
-data_7 <- inner_join(infection_times, metrics_df, by = "node")
+# join 2 frames
+data_7 <- left_join(metrics_df, avg_inf_time, by = join_by(node == node_num))
+
+# count our missing nodes
+data_7 |> filter(is.na(avg_inf_time)) |> nrow()
+
+
+## IMPUTATION REMOVED. 
+# #impute those 103 values 5 times with mice 
+# imputed <- mice(data_7, m=5, method='pmm')  # predictive mean matching
+# data_7_imputed <- complete(imputed)
+# 
+# #check for no missing values in imputed data
+# data_7_imputed |> filter(is.na(avg_inf_time))
+
+### REMOVE MISSING NODES - IN PLACE OF IMPUTATION. 
+data_7 <- data_7 |> filter(!is.na(avg_inf_time))
+
+```
+
+We now split into training and test data. With 70% in our training set.
+
+```{r}
 set.seed(123)
 train_index <- sample(1:nrow(data_7), 0.7 * nrow(data_7))
 train_data <- data_7[train_index, ]
@@ -1418,28 +1443,29 @@ distribution and correlation among these variables:
 
 ```{r}
 plot_density(train_data, nrow=5, ncol=5)
-plot_scatterplot(train_data, by = "first_infected", nrow=4, ncol=5)
 ggcorr(train_data)
 ```
 
 We observed that many network metrics are **strongly correlated** to
-each other (like degree and page rank), which could negatively affect
-the effectiveness of the model. We will run a **lasso model** to do a
-feature selection firstly, and take it as a baseline model.
+each other (like degree and page rank). With clustering the lowest
+correlation. None appear highly correlated with time to infection. The
+multicollinearity could negatively affect the effectiveness of the
+model. We will run a **lasso model** to do a feature selection, and
+compare it to a baseline model with all predictors.
 
-On the other hand, it's important to notice that the target variable
-`infection_times` is always positive integer numbers, and the relation
-with `infection_times` and some network metrics does not seem 100%
-linear. Therefore, after creating the baseline linear model with lasso,
-we will use the selected features to create a **glm poisson model**.
+Because of their distributions, we will convert betweenness, degree,
+clustering, pagerank and eigen centrality to their log values. This is
+done by the visual inspection of the density plots above.
 
-We first do a lasso model for feature selection:
+We first do a lasso model for feature selection. We exclude the node
+number from all models as this is numeric but not a predictor, just an
+ID variable.
 
 ```{r}
 # create X and y
-X_train <- model.matrix(first_infected ~ degree + betweenness + closeness + pagerank +
-                        eigen_centrality + clustering, data = train_data)[, -1]
-y_train <- train_data$first_infected
+X_train <- model.matrix(avg_inf_time ~ log(degree) + log(betweenness) + closeness + log(pagerank) +
+                        log(eigen_centrality) + log(clustering), data = train_data)[, -1]
+y_train <- matrix(train_data$avg_inf_time)
 
 # Lasso model with cross-validation
 lasso_model <- cv.glmnet(X_train, y_train, alpha = 1)
@@ -1451,83 +1477,96 @@ lasso_model$lambda.min
 coef(lasso_model, s = "lambda.min")
 ```
 
-We see the selected features are `closeness`, `pagerank`,
-`eigen_centrality` and `clustering`. Considering this information, now
-we build up a glm poissson model:
+We see the selected features are all of them. We keep 4 values after the
+lasso testing: `degree`, `closeness`, `pagerank`, and `eigen_centrality`
+. Considering this information, now we build up a model. Our target
+variable, the time of infection is continuos so we do a linear model.
 
 ```{r}
-poisson_model <- glm(first_infected ~ closeness + pagerank + eigen_centrality + clustering,
-                     data = train_data,
-                     family = "poisson")
+# set base with all linear predictors
+base_model <- lm(avg_inf_time ~ degree + closeness + pagerank + eigen_centrality + betweenness + clustering, data = train_data)
+summary(base_model)
 
-summary(poisson_model)
+# create lasso, logged model with 4 predictors
+lasso_model <- lm(avg_inf_time ~ log(degree) + closeness + log(pagerank) + log(eigen_centrality) , data = train_data)
+summary(lasso_model)
+
 ```
+
+We see both have low explainability overall - by the R\^2 but are
+significant with the P-value. It's not clear these will be good
+predictors.
 
 Now we test the predictive power of both models:
 
 ```{r}
-# Lasso prediction
-X_test <- model.matrix(first_infected ~ degree + betweenness + closeness + pagerank +
-                       eigen_centrality + clustering, data = test_data)[, -1]
-lasso_preds <- predict(lasso_model, newx = X_test, s = "lambda.min")
-
-# Poisson prediction
-poisson_preds <- predict(poisson_model, newdata = test_data, type = "response")
+# Base prediction
+base_preds <- predict(base_model, newdata = test_data, type = "response")
+#lasso prediction
+lasso_preds <- predict(lasso_model, newdata = test_data, type = "response")
 
 # MSE comparison
-mean((test_data$first_infected - lasso_preds)^2)
-mean((test_data$first_infected - poisson_preds)^2)
+mean((test_data$avg_inf_time - base_preds)^2)
+mean((test_data$avg_inf_time - lasso_preds)^2)
 ```
 
-The MSE of the poisson model is smaller than the lasso model, then we
-will keep the results from the poisson model and save them into the
-metrics_df. <br>
+The MSE of the lasso model is smaller than the base model, then we will
+keep the results from the lasso model as our best option. <br>
 
 #### 7.2. (Based on step 3) Find the predicted 1% earliest infected nodes
 
 Then, as in the step 3, we again try to find a better set of 1% of seeds
 in the network so we get more infected people than the random case.
 
+We do a quick boxplot too and see the peak is clearly around time 55-60.
+This is when the epidemic peaks. However there are low outliers that
+would be the first to get infected in the predictions. These are who we
+will be producing as our first to get infected.
+
 ```{r}
-metrics_df$predicted_time <- predict(poisson_model, newdata = metrics_df, type = "response")
+# add on our lasso predictions
+data_7$predicted_time <- predict(lasso_model, newdata = data_7, type = "response")
+# plot the infection distribution. 
+boxplot(data_7$predicted_time)
+
 num_seeds <- ceiling(0.01 * vcount(graph)) #set the percentage of 1%
-best_seed_nodes <- metrics_df %>%
+best_seed_nodes <- data_7 %>%
   arrange(predicted_time) %>%
   slice(1:num_seeds) %>% #select the nodes with earlier predicted infection time
   pull(node)
-head(best_seed_nodes)
+print(best_seed_nodes)
+
 ```
 
-#### 7.3. (Based on step 5) Compare the results of random or targeted vaccination
+#### 7.3. (Based on step 5) Convince the most connected 5% to be kind (based on our prediction), compare the results of random or targeted vaccination
 
 Then we replicate the step 5 but with the same seed according to the
-poisson model (targeted seeding), we also do 30 times of simulation for
+lasso model (targeted seeding), we also do 30 times of simulation for
 both random and pagerank vaccination.
 
+Append our predicted data to the question 5c output where we ran 30 of
+random and pagerank vaccinations.
+
 ```{r}
+## we also calcualte the 5% of the most connected seeds for our next question
+num_seeds <- ceiling(0.05 * vcount(graph)) #set the percentage of 1%
+pred_seed_nodes <- data_7 %>%
+  arrange(predicted_time) %>%
+  slice(1:num_seeds) %>% #select the nodes with earlier predicted infection time
+  pull(node)
+
+### now we re-run Q5 with this info on the 5% predicted to be earliest to get infected, we compare them to random 5% selection and the 5% pagerank selection. 
 set.seed(1234)
 
-# Parameters
-beta_7 <- beta_c
-mu_7 <- 0.1
-kind_n <- ceiling(0.05 * vcount(graph))
-runs_7 <- 30
 
-# Create result holder
-results_7 <- data.frame(
-  strategy = character(),
-  total_infected = numeric(),
-  peak_time = numeric()
-)
-
-# --------- 7a: Random vaccination, fixed Poisson seeds ----------
-for (i in 1:runs_7) {
-  kind_people_random <- sample(1:vcount(graph), kind_n)
-  graph_rand_7 <- delete_vertices(graph, kind_people_random)
+# run the predicted model 30 sims to see total infections.
+for (i in 1:30) {
+  graph_pred <- delete_vertices(graph, pred_seed_nodes)
+  seed_n <- ceiling(0.01 * vcount(graph_pred))
+  inf_seeds <- sample(1:vcount(graph_pred), seed_n)
   
-  valid_seeds_7_rand <- best_seed_nodes[best_seed_nodes %in% as.numeric(V(graph_rand_7))]
-  
-  sim <- sim_sir(graph_rand_7, beta = beta_7, mu = mu_7, seeds = valid_seeds_7_rand)
+  # run with the repeated data from Q5
+  sim <- sim_sir(graph_pred, beta = beta_c, mu = mu_5c, seeds = inf_seeds)
   
   total_inf <- length(unique(sim$inf))
   peak <- sim %>%
@@ -1535,39 +1574,21 @@ for (i in 1:runs_7) {
     summarise(ninf = n()) %>%
     filter(ninf == max(ninf)) %>%
     pull(t) %>%
-    min()
+    min()  # in case of multiple peak times
   
-  results_7 <- rbind(results_7, data.frame(
-    strategy = "Random_vaccination",
+  # 5c already exists, we just add on our results to a new df
+  results_5c <- rbind(results_5c, data.frame(
+    strategy = "Predicted",
     total_infected = total_inf,
     peak_time = peak
   ))
 }
 
-# --------- 7b: PageRank vaccination, fixed Poisson seeds ----------
-for (i in 1:runs_7) {
-  graph_pager_7 <- delete_vertices(graph, kind_people_pager)
-  
-  valid_seeds_7_pager <- best_seed_nodes[best_seed_nodes %in% as.numeric(V(graph_pager_7))]
-  
-  sim <- sim_sir(graph_pager_7, beta = beta_7, mu = mu_7, seeds = valid_seeds_7_pager)
-  
-  total_inf <- length(unique(sim$inf))
-  peak <- sim %>%
-    group_by(t) %>%
-    summarise(ninf = n()) %>%
-    filter(ninf == max(ninf)) %>%
-    pull(t) %>%
-    min()
-  
-  results_7 <- rbind(results_7, data.frame(
-    strategy = "PageRank_vaccination",
-    total_infected = total_inf,
-    peak_time = peak
-  ))
-}
-
+results_7 <- results_5c
+results_7
 ```
+
+Summarise the outputs:
 
 ```{r}
 # Summary
@@ -1576,48 +1597,76 @@ summary_7 <- results_7 %>%
   summarise(
     avg_infected = mean(total_infected),
     sd_infected = sd(total_infected),
-    avg_peak = mean(peak_time),
-    sd_peak = sd(peak_time)
+    med_infect = median(total_infected),
+    max_peak = max(total_infected),
+    peak_time = min(peak_time)
   )
 
 print(summary_7)
 ```
+
+We see that selecting our predicted nodes based on closeness was not
+effective. It had the highest variability, but actually had a higher
+average that random infection. The median infections in our prediction
+model is lower than the random selection, implying there was some
+outliers with our model. This will be easier to see with a
+visualisation:
 
 ```{r}
 # Visualisations
 ggplot(results_7, aes(x = strategy, y = total_infected, fill = strategy)) +
   geom_boxplot() +
   geom_jitter(width = 0.1, alpha = 0.6) +
-  labs(title = "Total Infected (30 runs): Poisson-seeds with different vaccination strategies")
+  labs(title = "Total Infected (30 runs) by different vaccination strategies")
 
-ggplot(results_7, aes(x = strategy, y = peak_time, fill = strategy)) +
-  geom_boxplot() +
-  geom_jitter(width = 0.1, alpha = 0.6) +
-  labs(title = "Peak Time (30 runs): Poisson-seeds with different vaccination strategies")
+table(results_7$strategy, results_7$peak_time)
+
 ```
 
 Here, **the results seem quite similar to the previous step 5**: as we
-set the beta at the critical beta, **both random and targeted (by
-pagerank) vaccination have the peak time at t=0**. And regarding the
-**total infected number**, it is still significantly **lower** under
-targeted vaccination (**27.46667**) than under random vaccination
-(**53.80000**), where the targeted vaccination manages to control the
-standard deviation as well (**10.33819 \< 26.63469**).
+set the beta at the critical beta, **all strategieshave the peak time at
+t=0 in all simulations**. As we saw in Q5, the vaccinations with the 5%
+deleted nodes do not turn to an epidemic. This is illustrated below.
 
-However, **the total infected number here (targeted seeding) is much
-higher than in the step 5 (random seeding) for both vaccination
-strategies**, targeted/pagerank (**27.46667\>17.60000**) and random
-(**53.80000\>28.16667**), while the standard deviation here are higher,
-too.
+We see in the following plot that under the predicted model, the number
+of infections also drops off, but less rapidly than the random or
+targeted approach to select the 5%.
+
+```{r}
+# plot the trend based on our tested data:
+# inf seeds still set from graph_pred calc in 7.2
+realization_pred <- sim_sir(graph_pred,
+                              beta = beta_c,
+                              mu,
+                              inf_seeds) %>%
+  group_by(t) %>% summarize(ninf=n())
+
+
+# plot comparing 
+ggplot() + 
+  geom_line(data=realization_random,aes(x=t,y=ninf,col="Vacc. Random"))+
+  geom_line(data=realization_pager,aes(x=t,y=ninf,col="Vacc. Targeted"))+
+  geom_line(data=realization_pred, aes(x=t,y=ninf,col="Predicted nodes"))+
+  labs(title = "Plot comparing 5% exclusion",
+       subtitle = "Methods: Random, using pagerank and using predicted nodes")
+```
+
+And regarding the **total infected number**, the median is lower under
+targeted vaccination than random.
+
+Our predictions are worse with modelling than just using the standard
+connectivity measures. Overall, it shows our predictive model had way
+too much noise and wasn't very effective. The high standard error shows
+that our model was picking up a lot of noise. But it's not too
+noticeable in Q5 as the 5% exclusion tends to work quite well with
+random selection anyway.
 
 #### 7.4. Conclusion
 
 If we combine the insights from step 5 and step 7, we can conclude that,
 on the one hand, no matter whether the vaccination strategy is taken
 (targeted or random), the initial seed was more effective when it's
-targeted seeding than when it's random seeding. On the other hand, no
-matter whether the initial seed was random or targeted, the targeted
-vaccination is always a more effective containment method.
+targeted seeding than when it's random seeding.
 
 The last conclusion is compatible with the mathematical proofs we
 learned from class. The targeted vaccination will naturally delete the
@@ -1663,3 +1712,6 @@ from class using real data and real simulations. It was cool to see how
 theory translates into actual strategies that work—and to see just how
 much network structure matters when it comes to spreading anything,
 whether it’s gossip, viruses, or ideas.
+
+Highly connected nodes really can dominate the outcome of spreading
+success in models!
